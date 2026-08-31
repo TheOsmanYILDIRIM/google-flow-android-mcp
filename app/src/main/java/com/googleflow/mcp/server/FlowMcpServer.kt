@@ -60,37 +60,37 @@ class FlowMcpServer(
 
     private fun handleClient(socket: Socket) {
         try {
-            socket.soTimeout = 10000
-            val input = BufferedReader(InputStreamReader(socket.getInputStream()))
+            socket.soTimeout = 6000
+            val input = socket.getInputStream()
             val output = socket.getOutputStream()
 
-            val requestLine = input.readLine() ?: return
-            val parts = requestLine.split(" ")
-            if (parts.size < 2) return
+            val headerBytes = readHeaderBytes(input) ?: return
+            val headerText = String(headerBytes, Charsets.UTF_8)
+            val lines = headerText.split("\r\n")
+            if (lines.isEmpty()) return
 
-            val method = parts[0]
-            val path = parts[1].split("?")[0]
+            val requestLine = lines[0].split(" ")
+            if (requestLine.size < 2) return
 
-            // Read Headers
+            val method = requestLine[0]
+            val path = requestLine[1].split("?")[0]
+
             var contentLength = 0
-            var line: String?
-            while (input.readLine().also { line = it } != null) {
-                if (line.isNullOrBlank()) break
-                if (line!!.startsWith("Content-Length:", ignoreCase = true)) {
-                    contentLength = line!!.substring(15).trim().toIntOrNull() ?: 0
+            for (line in lines) {
+                if (line.startsWith("Content-Length:", ignoreCase = true)) {
+                    contentLength = line.substring(15).trim().toIntOrNull() ?: 0
                 }
             }
 
-            // Read Body
             val body = if (contentLength > 0) {
-                val chars = CharArray(contentLength)
-                var read = 0
-                while (read < contentLength) {
-                    val r = input.read(chars, read, contentLength - read)
-                    if (r == -1) break
-                    read += r
+                val bodyBuf = ByteArray(contentLength)
+                var totalRead = 0
+                while (totalRead < contentLength) {
+                    val read = input.read(bodyBuf, totalRead, contentLength - totalRead)
+                    if (read == -1) break
+                    totalRead += read
                 }
-                String(chars, 0, read)
+                String(bodyBuf, 0, totalRead, Charsets.UTF_8)
             } else ""
 
             handleRoute(method, path, body, output)
@@ -99,6 +99,24 @@ class FlowMcpServer(
         } finally {
             try { socket.close() } catch (e: Exception) {}
         }
+    }
+
+    private fun readHeaderBytes(input: InputStream): ByteArray? {
+        val baos = java.io.ByteArrayOutputStream()
+        var state = 0
+        while (true) {
+            val b = input.read()
+            if (b == -1) break
+            baos.write(b)
+            when (state) {
+                0 -> if (b == '\r'.code) state = 1 else state = 0
+                1 -> if (b == '\n'.code) state = 2 else if (b == '\r'.code) state = 1 else state = 0
+                2 -> if (b == '\r'.code) state = 3 else state = 0
+                3 -> if (b == '\n'.code) return baos.toByteArray() else if (b == '\r'.code) state = 1 else state = 0
+            }
+            if (baos.size() > 65536) break
+        }
+        return if (baos.size() > 0) baos.toByteArray() else null
     }
 
     private fun handleRoute(method: String, path: String, body: String, output: OutputStream) {
@@ -118,28 +136,25 @@ class FlowMcpServer(
                 sendResponse(output, 200, "application/json", result)
             }
 
+            // Direct Thread-Safe Cookie Extraction (0ms latency, zero main thread hops!)
             method == "GET" && path == "/api/cookies" -> {
-                val deferred = CompletableDeferred<Map<String, Any>>()
-                mainHandler.post {
-                    val cookieManager = CookieManager.getInstance()
-                    val labsCookies = cookieManager.getCookie("https://labs.google") ?: ""
-                    val googleCookies = cookieManager.getCookie("https://google.com") ?: ""
-                    val accountsCookies = cookieManager.getCookie("https://accounts.google.com") ?: ""
-                    
-                    val combined = listOf(labsCookies, googleCookies, accountsCookies)
-                        .filter { it.isNotBlank() }
-                        .joinToString("; ")
+                val cookieManager = CookieManager.getInstance()
+                val labsCookies = cookieManager.getCookie("https://labs.google") ?: ""
+                val googleCookies = cookieManager.getCookie("https://google.com") ?: ""
+                val accountsCookies = cookieManager.getCookie("https://accounts.google.com") ?: ""
+                
+                val combined = listOf(labsCookies, googleCookies, accountsCookies)
+                    .filter { it.isNotBlank() }
+                    .joinToString("; ")
 
-                    deferred.complete(mapOf(
-                        "success" to true,
-                        "cookieHeader" to combined,
-                        "labsCookies" to labsCookies,
-                        "googleCookies" to googleCookies,
-                        "accountsCookies" to accountsCookies
-                    ))
-                }
-                val result = runBlocking { withTimeoutOrNull(3000) { deferred.await() } ?: mapOf("success" to false) }
-                sendResponse(output, 200, "application/json", gson.toJson(result))
+                val res = mapOf(
+                    "success" to true,
+                    "cookieHeader" to combined,
+                    "labsCookies" to labsCookies,
+                    "googleCookies" to googleCookies,
+                    "accountsCookies" to accountsCookies
+                )
+                sendResponse(output, 200, "application/json", gson.toJson(res))
             }
 
             method == "POST" && path == "/api/cookies" -> {
