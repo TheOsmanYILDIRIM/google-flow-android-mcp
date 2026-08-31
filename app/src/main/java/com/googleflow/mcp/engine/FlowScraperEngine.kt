@@ -103,6 +103,19 @@ class FlowScraperEngine(private val context: Context) {
                 cookieManager.flush()
                 bridge.log("Loaded: $url")
                 injectBridgeScript()
+
+                try {
+                    val labs = cookieManager.getCookie("https://labs.google") ?: ""
+                    val google = cookieManager.getCookie("https://google.com") ?: ""
+                    val accounts = cookieManager.getCookie("https://accounts.google.com") ?: ""
+                    val all = listOf(labs, google, accounts).filter { it.isNotBlank() }.joinToString("; ")
+                    if (all.contains("PSID") || all.contains("SSID") || all.contains("OTZ") || all.contains("SID")) {
+                        val dir = File("/sdcard/Download/GoogleFlow")
+                        if (!dir.exists()) dir.mkdirs()
+                        File(dir, "cookies.txt").writeText(all)
+                        bridge.log("✓ Auto-exported cookies to /sdcard/Download/GoogleFlow/cookies.txt")
+                    }
+                } catch (e: Exception) {}
             }
         }
 
