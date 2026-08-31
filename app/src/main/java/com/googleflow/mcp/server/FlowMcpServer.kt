@@ -6,12 +6,13 @@ import com.google.gson.Gson
 import com.google.gson.JsonObject
 import io.ktor.http.*
 import io.ktor.server.application.*
+import io.ktor.server.cio.*
 import io.ktor.server.engine.*
-import io.ktor.server.netty.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 
@@ -19,13 +20,13 @@ class FlowMcpServer(
     private val engine: FlowScraperEngine,
     private val port: Int = 8765
 ) {
-    private var server: NettyApplicationEngine? = null
+    private var server: CIOApplicationEngine? = null
     private val gson = Gson()
 
     fun start() {
         if (server != null) return
 
-        server = embeddedServer(Netty, port = port, host = "127.0.0.1") {
+        server = embeddedServer(CIO, port = port, host = "127.0.0.1") {
             routing {
                 get("/") {
                     call.respondText(
@@ -95,17 +96,17 @@ class FlowMcpServer(
                         return@post
                     }
 
-                    val deferred = CompletableDeferred<Pair<Boolean, String>>()
+                    val deferred = CompletableDeferred<String>()
                     val taskId = engine.generateImage(prompt, model, aspectRatio, count) { tId ->
-                        engine.bridge.registerCallback(tId) { success, outputUrl, meta ->
-                            deferred.complete(Pair(success, outputUrl))
-                        }
+                        deferred.complete(tId)
                     }
 
-                    val result = withTimeoutOrNull(240000) { deferred.await() }
+                    val genResult = withTimeoutOrNull(240000) {
+                        engine.bridge.generationEvents.first { it.taskId == taskId }
+                    }
 
-                    if (result != null && result.first) {
-                        val mediaUrl = result.second
+                    if (genResult != null && genResult.success) {
+                        val mediaUrl = genResult.mediaUrl
                         try {
                             val localFile = engine.downloadMedia(mediaUrl, outputPath)
                             call.respond(
@@ -133,7 +134,7 @@ class FlowMcpServer(
                     } else {
                         call.respond(
                             HttpStatusCode.InternalServerError,
-                            mapOf("error" to "Generation timed out or failed on device")
+                            mapOf("error" to (genResult?.errorMessage ?: "Generation timed out or failed on device"))
                         )
                     }
                 }
@@ -157,17 +158,17 @@ class FlowMcpServer(
                     val base64Image = Base64.encodeToString(refFile.readBytes(), Base64.NO_WRAP)
                     val mimeType = if (refFile.name.endsWith(".png", true)) "image/png" else "image/jpeg"
 
-                    val deferred = CompletableDeferred<Pair<Boolean, String>>()
+                    val deferred = CompletableDeferred<String>()
                     val taskId = engine.generateWithReference(prompt, base64Image, mimeType, refFile.name, model, aspectRatio, count) { tId ->
-                        engine.bridge.registerCallback(tId) { success, outputUrl, _ ->
-                            deferred.complete(Pair(success, outputUrl))
-                        }
+                        deferred.complete(tId)
                     }
 
-                    val result = withTimeoutOrNull(260000) { deferred.await() }
+                    val genResult = withTimeoutOrNull(260000) {
+                        engine.bridge.generationEvents.first { it.taskId == taskId }
+                    }
 
-                    if (result != null && result.first) {
-                        val mediaUrl = result.second
+                    if (genResult != null && genResult.success) {
+                        val mediaUrl = genResult.mediaUrl
                         try {
                             val localFile = engine.downloadMedia(mediaUrl, outputPath)
                             call.respond(
@@ -195,7 +196,7 @@ class FlowMcpServer(
                     } else {
                         call.respond(
                             HttpStatusCode.InternalServerError,
-                            mapOf("error" to "Reference image generation failed or timed out")
+                            mapOf("error" to (genResult?.errorMessage ?: "Reference image generation failed or timed out"))
                         )
                     }
                 }
@@ -208,17 +209,17 @@ class FlowMcpServer(
                     val aspectRatio = json.get("aspectRatio")?.asString ?: "16:9"
                     val outputPath = json.get("outputPath")?.asString
 
-                    val deferred = CompletableDeferred<Pair<Boolean, String>>()
+                    val deferred = CompletableDeferred<String>()
                     val taskId = engine.generateVideo(prompt, model, aspectRatio) { tId ->
-                        engine.bridge.registerCallback(tId) { success, outputUrl, _ ->
-                            deferred.complete(Pair(success, outputUrl))
-                        }
+                        deferred.complete(tId)
                     }
 
-                    val result = withTimeoutOrNull(400000) { deferred.await() }
+                    val genResult = withTimeoutOrNull(400000) {
+                        engine.bridge.generationEvents.first { it.taskId == taskId }
+                    }
 
-                    if (result != null && result.first) {
-                        val mediaUrl = result.second
+                    if (genResult != null && genResult.success) {
+                        val mediaUrl = genResult.mediaUrl
                         try {
                             val localFile = engine.downloadMedia(mediaUrl, outputPath)
                             call.respond(
@@ -246,7 +247,7 @@ class FlowMcpServer(
                     } else {
                         call.respond(
                             HttpStatusCode.InternalServerError,
-                            mapOf("error" to "Video generation timed out or failed")
+                            mapOf("error" to (genResult?.errorMessage ?: "Video generation timed out or failed"))
                         )
                     }
                 }
