@@ -1,34 +1,37 @@
 /**
- * Google Flow MCP Automation Bridge & Scraper (v2.0)
- * Updated for latest Google Flow:
- * - Nano Banana 2 & Nano Banana Image Models
- * - Veo 3.1 Video Model
- * - Aspect Ratios (1:1, 16:9, 9:16, 4:3, 3:4, 2:3, 3:2, 21:9)
- * - Multi-output batch generation (1x, 2x, 3x, 4x)
- * - Project management & categorization
+ * Google Flow & FX Suite Automation Bridge & Scraper (v2.2)
+ * Supports:
+ * - https://labs.google/fx/tools/flow (Google Flow Studio)
+ * - https://labs.google/fx/tools/image-fx (ImageFX - Nano Banana 2 / Imagen 3)
+ * - https://labs.google/fx/tools/video-fx (VideoFX - Veo 3.1)
  */
 
 (function() {
     if (window.FlowBridgeInitialized) return;
     window.FlowBridgeInitialized = true;
 
-    console.log("[FlowBridge] Initializing Google Flow v2.0 Automation Bridge...");
+    console.log("[FlowBridge] Initializing Google Flow & FX Automation Bridge v2.2...");
 
     const SELECTORS = {
         promptInputs: [
             'textarea[placeholder*="prompt" i]',
             'textarea[placeholder*="describe" i]',
+            'textarea[placeholder*="image" i]',
+            'textarea[placeholder*="video" i]',
             'div[contenteditable="true"]',
             'input[type="text"][placeholder*="prompt" i]',
             'textarea',
-            '[data-testid="prompt-input"]'
+            '[data-testid="prompt-input"]',
+            '.prompt-input',
+            '[aria-label*="prompt" i]'
         ],
         generateButtons: [
-            'button:has(svg)',
-            'button[aria-label*="generate" i]',
-            'button[aria-label*="create" i]',
             'button:contains("Generate")',
             'button:contains("Create")',
+            'button:contains("Try in Google Flow")',
+            'button[aria-label*="generate" i]',
+            'button[aria-label*="create" i]',
+            'button:has(svg)',
             '[data-testid="generate-button"]'
         ],
         modelDropdown: [
@@ -47,11 +50,6 @@
             'button[aria-label*="count" i]',
             'button[aria-label*="outputs" i]'
         ],
-        projectDropdown: [
-            '[data-testid="project-selector"]',
-            'button[aria-label*="project" i]',
-            'a[href*="/project/"]'
-        ],
         fileInputs: [
             'input[type="file"]',
             '[data-testid="file-upload-input"]'
@@ -59,7 +57,8 @@
         userProfile: [
             'button[aria-label*="Google Account" i]',
             'img[alt*="Google Account" i]',
-            '[data-testid="user-profile"]'
+            '[data-testid="user-profile"]',
+            'button[aria-label*="Account" i]'
         ]
     };
 
@@ -68,7 +67,7 @@
             try {
                 if (selector.includes(':contains(')) {
                     const text = selector.match(/:contains\("([^"]+)"\)/)[1];
-                    const elements = Array.from(document.querySelectorAll('button, span, div, a'));
+                    const elements = Array.from(document.querySelectorAll('button, span, div, a, p'));
                     const found = elements.find(el => el.textContent && el.textContent.trim().toLowerCase().includes(text.toLowerCase()));
                     if (found) return found;
                 } else {
@@ -93,7 +92,7 @@
     }
 
     function clickMatchingButton(textPatterns) {
-        const buttons = Array.from(document.querySelectorAll('button, div[role="button"], span, div[role="radio"]'));
+        const buttons = Array.from(document.querySelectorAll('button, div[role="button"], span, div[role="radio"], a'));
         for (const pattern of textPatterns) {
             const found = buttons.find(b => b.textContent && b.textContent.trim().toLowerCase().includes(pattern.toLowerCase()));
             if (found) {
@@ -135,7 +134,7 @@
         },
 
         getAccountInfo: function() {
-            let credits = "Unknown";
+            let credits = "Active";
             const creditEl = document.querySelector('[data-testid="credit-balance"], [aria-label*="credits" i]');
             if (creditEl) credits = creditEl.textContent.trim();
 
@@ -143,7 +142,7 @@
                 url: window.location.href,
                 isLoggedIn: this.checkAuth(),
                 credits: credits,
-                supportedModels: ["nano-banana-2", "nano-banana", "veo-3.1"],
+                supportedModels: ["nano-banana-2", "nano-banana", "veo-3.1", "gemini-omni"],
                 supportedAspectRatios: ["1:1", "16:9", "9:16", "4:3", "3:4", "2:3", "3:2", "21:9"],
                 maxOutputsCount: 4,
                 timestamp: Date.now()
@@ -152,23 +151,20 @@
         },
 
         applyModelSettings: function(model, aspectRatio, count) {
-            // Select Model (Nano Banana 2 / Veo 3.1)
             if (model) {
                 if (model.includes("veo")) {
-                    clickMatchingButton(["Veo 3.1", "Veo 3", "Veo", "Video"]);
+                    clickMatchingButton(["Veo 3.1", "Veo", "Video"]);
                 } else {
                     clickMatchingButton(["Nano Banana 2", "Nano Banana", "Imagen"]);
                 }
             }
 
-            // Select Aspect Ratio (1:1, 16:9, 9:16, 4:3, etc.)
             if (aspectRatio) {
                 setTimeout(() => {
                     clickMatchingButton([aspectRatio, `Ratio ${aspectRatio}`, `Aspect ${aspectRatio}`]);
                 }, 100);
             }
 
-            // Select Outputs Count (1x, 2x, 3x, 4x)
             if (count && count > 1) {
                 setTimeout(() => {
                     clickMatchingButton([`${count}x`, `${count} images`, `${count} outputs`, `${count}`]);
@@ -189,7 +185,7 @@
                 const inputEl = findElement(SELECTORS.promptInputs);
                 if (!inputEl) {
                     if (window.AndroidBridge) {
-                        window.AndroidBridge.onError(taskId, "Prompt input element not found in DOM");
+                        window.AndroidBridge.onError(taskId, "Prompt input not found on page: " + window.location.href);
                     }
                     return false;
                 }
@@ -205,9 +201,6 @@
                         return;
                     }
                     btn.click();
-                    console.log("[FlowBridge] Generate clicked with model:", model, "ratio:", aspectRatio, "count:", count);
-
-                    // Watch for output (handles single or multiple images up to 4x)
                     this.watchForOutput(taskId, 'image', count, 180000);
                 }, 500);
 
@@ -279,7 +272,7 @@
                     setTimeout(() => {
                         const btn = findElement(SELECTORS.generateButtons);
                         if (btn) btn.click();
-                        this.watchForOutput(taskId, 'video', 1, 360000); // 6 min timeout for Veo 3.1
+                        this.watchForOutput(taskId, 'video', 1, 360000);
                     }, 500);
                 }, 600);
 
@@ -382,5 +375,5 @@
         window.FlowAutomation.checkAuth();
     }, 5000);
 
-    console.log("[FlowBridge] Google Flow v2.0 Automation Bridge Ready.");
+    console.log("[FlowBridge] Google Flow & FX Suite v2.2 Ready.");
 })();

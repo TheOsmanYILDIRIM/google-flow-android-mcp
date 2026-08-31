@@ -67,7 +67,7 @@ fun MainScreen(
             text = {
                 Column {
                     Text(
-                        "Normal tarayıcınızdan aldığınız 'labs.google' çerezlerini buraya yapıştırarak Google oturumunu anında aktarabilirsiniz:",
+                        "Tarayıcınızdan aldığınız 'labs.google' çerezlerini buraya yapıştırarak Google oturumunu anında aktarabilirsiniz:",
                         fontSize = 13.sp,
                         color = Color.LightGray
                     )
@@ -114,7 +114,7 @@ fun MainScreen(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Column {
-                            Text("Google Flow MCP v2.1", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                            Text("Google Flow MCP v2.2", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                             Text("127.0.0.1:8765 | ${if (authState) "Ready ✓" else "Giriş Bekleniyor ⚠️"}", style = MaterialTheme.typography.bodySmall, color = if (authState) Color(0xFF34A853) else Color(0xFFFBBC05))
                         }
                     }
@@ -195,18 +195,31 @@ fun MainScreen(
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState())
                                     .padding(horizontal = 8.dp, vertical = 4.dp),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Button(
-                                    onClick = { service?.engine?.loadLoginUrl() },
+                                    onClick = { service?.engine?.loadFlowUrl() },
                                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4285F4)),
                                     contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
                                 ) {
-                                    Icon(Icons.Default.Login, contentDescription = null, modifier = Modifier.size(16.dp))
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text("Safari UA Giriş", fontSize = 12.sp)
+                                    Text("Google Flow", fontSize = 12.sp)
+                                }
+                                Button(
+                                    onClick = { service?.engine?.loadImageFxUrl() },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF34A853)),
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                                ) {
+                                    Text("ImageFX", fontSize = 12.sp)
+                                }
+                                Button(
+                                    onClick = { service?.engine?.loadVideoFxUrl() },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEA4335)),
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                                ) {
+                                    Text("VideoFX", fontSize = 12.sp)
                                 }
                                 Button(
                                     onClick = { showCookieDialog = true },
@@ -216,15 +229,6 @@ fun MainScreen(
                                     Icon(Icons.Default.Key, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
                                     Spacer(modifier = Modifier.width(4.dp))
                                     Text("Cookie Yapıştır", color = Color.Black, fontSize = 12.sp)
-                                }
-                                Button(
-                                    onClick = { service?.engine?.loadFlowUrl() },
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3C4043)),
-                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
-                                ) {
-                                    Icon(Icons.Default.Home, contentDescription = null, modifier = Modifier.size(16.dp))
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text("Flow Yenile", fontSize = 12.sp)
                                 }
                             }
                         }

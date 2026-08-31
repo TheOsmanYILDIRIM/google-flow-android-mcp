@@ -35,8 +35,11 @@ class FlowScraperEngine(private val context: Context) {
     var webView: WebView? = null
         private set
 
-    val flowUrl = "https://labs.google/fx/"
-    val loginUrl = "https://accounts.google.com/ServiceLogin?continue=https%3A%2F%2Flabs.google%2Ffx%2F"
+    // Exact official URLs
+    val flowUrl = "https://labs.google/fx/tools/flow"
+    val imageFxUrl = "https://labs.google/fx/tools/image-fx"
+    val videoFxUrl = "https://labs.google/fx/tools/video-fx"
+    val loginUrl = "https://accounts.google.com/ServiceLogin?continue=https%3A%2F%2Flabs.google%2Ffx%2Ftools%2Fflow"
 
     // Safari Desktop User Agent: Google OAuth does not block Safari macOS User Agents
     val safariUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15"
@@ -172,12 +175,24 @@ class FlowScraperEngine(private val context: Context) {
         }
     }
 
+    fun loadImageFxUrl() {
+        mainHandler.post {
+            webView?.loadUrl(imageFxUrl)
+        }
+    }
+
+    fun loadVideoFxUrl() {
+        mainHandler.post {
+            webView?.loadUrl(videoFxUrl)
+        }
+    }
+
     private fun injectBridgeScript() {
         try {
             val jsCode = context.assets.open("flow_bridge.js").bufferedReader().use { it.readText() }
             mainHandler.post {
                 webView?.evaluateJavascript(jsCode) { result ->
-                    bridge.log("FlowBridge v2.0 injected: $result")
+                    bridge.log("FlowBridge v2.2 injected: $result")
                 }
             }
         } catch (e: Exception) {
