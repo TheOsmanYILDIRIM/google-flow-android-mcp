@@ -1,16 +1,13 @@
 /**
- * Google Flow & FX Suite Automation Bridge & Scraper (v2.2)
- * Supports:
- * - https://labs.google/fx/tools/flow (Google Flow Studio)
- * - https://labs.google/fx/tools/image-fx (ImageFX - Nano Banana 2 / Imagen 3)
- * - https://labs.google/fx/tools/video-fx (VideoFX - Veo 3.1)
+ * Google Flow & FX Suite Automation Bridge & Scraper (v2.3)
+ * Comprehensive React / Next.js Input State Sync & Generate Activation
  */
 
 (function() {
     if (window.FlowBridgeInitialized) return;
     window.FlowBridgeInitialized = true;
 
-    console.log("[FlowBridge] Initializing Google Flow & FX Automation Bridge v2.2...");
+    console.log("[FlowBridge] Initializing Google Flow & FX Automation Bridge v2.3...");
 
     const SELECTORS = {
         promptInputs: [
@@ -18,20 +15,25 @@
             'textarea[placeholder*="describe" i]',
             'textarea[placeholder*="image" i]',
             'textarea[placeholder*="video" i]',
+            'textarea[placeholder*="expand" i]',
             'div[contenteditable="true"]',
-            'input[type="text"][placeholder*="prompt" i]',
+            'div[role="textbox"]',
             'textarea',
+            'input[type="text"][placeholder*="prompt" i]',
             '[data-testid="prompt-input"]',
             '.prompt-input',
             '[aria-label*="prompt" i]'
         ],
         generateButtons: [
+            'button[aria-label*="generate" i]',
+            'button[aria-label*="create" i]',
+            'button[aria-label*="submit" i]',
+            'button[aria-label*="send" i]',
             'button:contains("Generate")',
             'button:contains("Create")',
             'button:contains("Try in Google Flow")',
-            'button[aria-label*="generate" i]',
-            'button[aria-label*="create" i]',
             'button:has(svg)',
+            'button:has(i)',
             '[data-testid="generate-button"]'
         ],
         modelDropdown: [
@@ -70,6 +72,11 @@
                     const elements = Array.from(document.querySelectorAll('button, span, div, a, p'));
                     const found = elements.find(el => el.textContent && el.textContent.trim().toLowerCase().includes(text.toLowerCase()));
                     if (found) return found;
+                } else if (selector.includes(':has(')) {
+                    const childTag = selector.match(/:has\(([^)]+)\)/)[1];
+                    const elements = Array.from(document.querySelectorAll('button, div[role="button"]'));
+                    const found = elements.find(el => el.querySelector(childTag));
+                    if (found) return found;
                 } else {
                     const el = document.querySelector(selector);
                     if (el) return el;
@@ -79,16 +86,44 @@
         return null;
     }
 
-    function triggerInputEvents(element, text) {
+    /**
+     * Injects text into React / Next.js controlled input components
+     * and forces React state synchronization.
+     */
+    function triggerReactInput(element, text) {
         element.focus();
+
         if (element.tagName.toLowerCase() === 'textarea' || element.tagName.toLowerCase() === 'input') {
-            element.value = text;
-            element.dispatchEvent(new Event('input', { bubbles: true }));
-            element.dispatchEvent(new Event('change', { bubbles: true }));
-        } else if (element.isContentEditable) {
-            element.textContent = text;
-            element.dispatchEvent(new Event('input', { bubbles: true }));
+            const proto = element.tagName.toLowerCase() === 'textarea' 
+                ? window.HTMLTextAreaElement.prototype 
+                : window.HTMLInputElement.prototype;
+
+            const nativeSetter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+            if (nativeSetter) {
+                nativeSetter.call(element, text);
+            } else {
+                element.value = text;
+            }
+
+            // Dispatch React-compatible events
+            element.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
+            element.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
+            element.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text }));
+        } else if (element.isContentEditable || element.getAttribute('contenteditable') === 'true') {
+            element.focus();
+            try {
+                document.execCommand('selectAll', false, null);
+                document.execCommand('insertText', false, text);
+            } catch (e) {
+                element.textContent = text;
+            }
+            element.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
+            element.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text }));
         }
+
+        // Trigger keyboard events to ensure buttons activate
+        element.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', charCode: 13, keyCode: 13, bubbles: true }));
+        element.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', code: 'Enter', charCode: 13, keyCode: 13, bubbles: true }));
     }
 
     function clickMatchingButton(textPatterns) {
@@ -142,8 +177,8 @@
                 url: window.location.href,
                 isLoggedIn: this.checkAuth(),
                 credits: credits,
-                supportedModels: ["nano-banana-2", "nano-banana", "veo-3.1", "gemini-omni"],
-                supportedAspectRatios: ["1:1", "16:9", "9:16", "4:3", "3:4", "2:3", "3:2", "21:9"],
+                supportedModels: ["nano-banana-2", "nano-banana", "veo-3.1"],
+                supportedAspectRatios: ["1:1", "16:9", "9:16", "4:3", "3:4", "2:3", "3:2"],
                 maxOutputsCount: 4,
                 timestamp: Date.now()
             };
@@ -190,19 +225,35 @@
                     return false;
                 }
 
-                triggerInputEvents(inputEl, prompt);
+                // Force React input state update
+                triggerReactInput(inputEl, prompt);
 
+                // Wait 400ms for React state & button enable
                 setTimeout(() => {
-                    const btn = findElement(SELECTORS.generateButtons);
+                    // Try finding enabled generate button
+                    let btn = Array.from(document.querySelectorAll('button')).find(b => {
+                        const aria = (b.getAttribute('aria-label') || '').toLowerCase();
+                        const text = (b.textContent || '').toLowerCase();
+                        return (aria.includes('generate') || aria.includes('create') || text.includes('generate') || text.includes('create')) && !b.disabled;
+                    });
+
                     if (!btn) {
-                        if (window.AndroidBridge) {
-                            window.AndroidBridge.onError(taskId, "Generate button not found");
-                        }
-                        return;
+                        btn = findElement(SELECTORS.generateButtons);
                     }
-                    btn.click();
-                    this.watchForOutput(taskId, 'image', count, 180000);
-                }, 500);
+
+                    if (btn) {
+                        btn.removeAttribute('disabled');
+                        btn.disabled = false;
+                        btn.click();
+                        console.log("[FlowBridge] Generate button clicked successfully!");
+                        this.watchForOutput(taskId, 'image', count, 180000);
+                    } else {
+                        // Fallback: send Enter keypress event to input
+                        inputEl.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, ctrlKey: true, bubbles: true }));
+                        console.log("[FlowBridge] Dispatched Ctrl+Enter fallback.");
+                        this.watchForOutput(taskId, 'image', count, 180000);
+                    }
+                }, 400);
 
                 return true;
             } catch (err) {
@@ -237,11 +288,15 @@
 
                 setTimeout(() => {
                     const inputEl = findElement(SELECTORS.promptInputs);
-                    if (inputEl) triggerInputEvents(inputEl, prompt);
+                    if (inputEl) triggerReactInput(inputEl, prompt);
 
                     setTimeout(() => {
                         const btn = findElement(SELECTORS.generateButtons);
-                        if (btn) btn.click();
+                        if (btn) {
+                            btn.removeAttribute('disabled');
+                            btn.disabled = false;
+                            btn.click();
+                        }
                         this.watchForOutput(taskId, 'image', count, 200000);
                     }, 500);
                 }, 800);
@@ -267,11 +322,15 @@
 
                 setTimeout(() => {
                     const inputEl = findElement(SELECTORS.promptInputs);
-                    if (inputEl) triggerInputEvents(inputEl, prompt);
+                    if (inputEl) triggerReactInput(inputEl, prompt);
 
                     setTimeout(() => {
                         const btn = findElement(SELECTORS.generateButtons);
-                        if (btn) btn.click();
+                        if (btn) {
+                            btn.removeAttribute('disabled');
+                            btn.disabled = false;
+                            btn.click();
+                        }
                         this.watchForOutput(taskId, 'video', 1, 360000);
                     }, 500);
                 }, 600);
@@ -301,7 +360,7 @@
             setTimeout(() => {
                 const nameInput = document.querySelector('input[placeholder*="project name" i], input[type="text"]');
                 if (nameInput) {
-                    triggerInputEvents(nameInput, name);
+                    triggerReactInput(nameInput, name);
                     setTimeout(() => {
                         clickMatchingButton(["Create", "Save", "Confirm"]);
                     }, 300);
@@ -375,5 +434,5 @@
         window.FlowAutomation.checkAuth();
     }, 5000);
 
-    console.log("[FlowBridge] Google Flow & FX Suite v2.2 Ready.");
+    console.log("[FlowBridge] Google Flow & FX Suite v2.3 Ready.");
 })();
