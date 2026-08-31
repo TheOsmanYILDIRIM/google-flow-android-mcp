@@ -31,7 +31,7 @@ class FlowMcpServer(
             routing {
                 get("/") {
                     call.respondText(
-                        "Google Flow Android MCP Server v3.3 (Full Python Crawler & API Control Active)",
+                        "Google Flow Android MCP Server v3.5 (Active)",
                         ContentType.Text.Plain
                     )
                 }
@@ -41,7 +41,7 @@ class FlowMcpServer(
                     engine.checkStatus { jsonStr ->
                         deferred.complete(jsonStr)
                     }
-                    val result = deferred.await()
+                    val result = withTimeoutOrNull(3000) { deferred.await() } ?: "{}"
                     call.respondText(result, ContentType.Application.Json)
                 }
 
@@ -97,11 +97,11 @@ class FlowMcpServer(
                         }
                     } ?: deferred.complete("")
                     
-                    val html = deferred.await()
+                    val html = withTimeoutOrNull(4000) { deferred.await() } ?: ""
                     call.respondText(html, ContentType.Text.Html)
                 }
 
-                // Execute arbitrary JavaScript in the WebView and return result to Python
+                // Execute arbitrary JavaScript in the WebView with safe timeout
                 post("/api/eval") {
                     val body = call.receiveText()
                     val json = gson.fromJson(body, JsonObject::class.java)
@@ -114,7 +114,7 @@ class FlowMcpServer(
                         }
                     } ?: deferred.complete("null")
 
-                    val evalResult = deferred.await()
+                    val evalResult = withTimeoutOrNull(4000) { deferred.await() } ?: "{\"status\":\"executed_or_navigating\"}"
                     call.respondText(evalResult, ContentType.Application.Json)
                 }
 
@@ -140,7 +140,7 @@ class FlowMcpServer(
                     engine.dumpDom { jsonStr ->
                         deferred.complete(jsonStr)
                     }
-                    val result = deferred.await()
+                    val result = withTimeoutOrNull(4000) { deferred.await() } ?: "{}"
                     call.respondText(result, ContentType.Application.Json)
                 }
 
@@ -149,7 +149,7 @@ class FlowMcpServer(
                     engine.listProjects { jsonStr ->
                         deferred.complete(jsonStr)
                     }
-                    val result = deferred.await()
+                    val result = withTimeoutOrNull(4000) { deferred.await() } ?: "[]"
                     call.respondText(result, ContentType.Application.Json)
                 }
 
@@ -334,7 +334,7 @@ class FlowMcpServer(
                                     })
                                     add("serverInfo", JsonObject().apply {
                                         addProperty("name", "google-flow-android-mcp")
-                                        addProperty("version", "3.3.0")
+                                        addProperty("version", "3.5.0")
                                     })
                                 })
                             }
