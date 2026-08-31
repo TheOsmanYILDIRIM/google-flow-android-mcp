@@ -1,6 +1,7 @@
 package com.googleflow.mcp.server
 
 import android.util.Base64
+import android.webkit.CookieManager
 import com.googleflow.mcp.engine.FlowScraperEngine
 import com.google.gson.Gson
 import com.google.gson.JsonObject
@@ -30,7 +31,7 @@ class FlowMcpServer(
             routing {
                 get("/") {
                     call.respondText(
-                        "Google Flow Android MCP Server v2.4 (Veo 3.1 & Nano Banana 2 Active)",
+                        "Google Flow Android MCP Server v3.2 (Full Python Crawler & API Control Active)",
                         ContentType.Text.Plain
                     )
                 }
@@ -44,15 +45,27 @@ class FlowMcpServer(
                     call.respondText(result, ContentType.Application.Json)
                 }
 
-                get("/api/dom-dump") {
-                    val deferred = CompletableDeferred<String>()
-                    engine.dumpDom { jsonStr ->
-                        deferred.complete(jsonStr)
-                    }
-                    val result = deferred.await()
-                    call.respondText(result, ContentType.Application.Json)
+                // Export current authenticated cookies directly to Python
+                get("/api/cookies") {
+                    val cookieManager = CookieManager.getInstance()
+                    val labsCookies = cookieManager.getCookie("https://labs.google") ?: ""
+                    val googleCookies = cookieManager.getCookie("https://google.com") ?: ""
+                    val accountsCookies = cookieManager.getCookie("https://accounts.google.com") ?: ""
+                    
+                    val combined = listOf(labsCookies, googleCookies, accountsCookies)
+                        .filter { it.isNotBlank() }
+                        .joinToString("; ")
+
+                    call.respond(HttpStatusCode.OK, mapOf(
+                        "success" to true,
+                        "cookieHeader" to combined,
+                        "labsCookies" to labsCookies,
+                        "googleCookies" to googleCookies,
+                        "accountsCookies" to accountsCookies
+                    ))
                 }
 
+                // Inject cookies into Android App WebView
                 post("/api/cookies") {
                     val body = call.receiveText()
                     val json = gson.fromJson(body, JsonObject::class.java)
@@ -63,6 +76,67 @@ class FlowMcpServer(
                     } else {
                         call.respond(HttpStatusCode.BadRequest, mapOf("error" to "No cookies provided"))
                     }
+                }
+
+                // Get complete page HTML source for BeautifulSoup scraping
+                get("/api/page-source") {
+                    val deferred = CompletableDeferred<String>()
+                    engine.webView?.post {
+                        engine.webView?.evaluateJavascript("document.documentElement.outerHTML") { htmlResult ->
+                            val unescaped = if (htmlResult != null && htmlResult.startsWith("\"") && htmlResult.endsWith("\"")) {
+                                try {
+                                    gson.fromJson(htmlResult, String::class.java)
+                                } catch (e: Exception) {
+                                    htmlResult
+                                }
+                            } else htmlResult ?: ""
+                            deferred.complete(unescaped)
+                        }
+                    } ?: deferred.complete("")
+                    
+                    val html = deferred.await()
+                    call.respondText(html, ContentType.Text.Html)
+                }
+
+                // Execute arbitrary JavaScript in the WebView and return result to Python
+                post("/api/eval") {
+                    val body = call.receiveText()
+                    val json = gson.fromJson(body, JsonObject::class.java)
+                    val script = json.get("script")?.asString ?: ""
+                    
+                    val deferred = CompletableDeferred<String>()
+                    engine.webView?.post {
+                        engine.webView?.evaluateJavascript(script) { result ->
+                            deferred.complete(result ?: "null")
+                        }
+                    } ?: deferred.complete("null")
+
+                    val evalResult = deferred.await()
+                    call.respondText(evalResult, ContentType.Application.Json)
+                }
+
+                // Navigate WebView to specific URL
+                post("/api/navigate") {
+                    val body = call.receiveText()
+                    val json = gson.fromJson(body, JsonObject::class.java)
+                    val url = json.get("url")?.asString ?: ""
+                    if (url.isNotBlank()) {
+                        engine.webView?.post {
+                            engine.webView?.loadUrl(url)
+                        }
+                        call.respond(HttpStatusCode.OK, mapOf("success" to true, "navigatedTo" to url))
+                    } else {
+                        call.respond(HttpStatusCode.BadRequest, mapOf("error" to "URL is required"))
+                    }
+                }
+
+                get("/api/dom-dump") {
+                    val deferred = CompletableDeferred<String>()
+                    engine.dumpDom { jsonStr ->
+                        deferred.complete(jsonStr)
+                    }
+                    val result = deferred.await()
+                    call.respondText(result, ContentType.Application.Json)
                 }
 
                 get("/api/projects") {
@@ -86,7 +160,7 @@ class FlowMcpServer(
                     val body = call.receiveText()
                     val json = gson.fromJson(body, JsonObject::class.java)
                     val prompt = json.get("prompt")?.asString ?: ""
-                    val model = json.get("model")?.asString ?: "nano-banana-2"
+                    val model = json.get("model")?.asString ?: "Nano Banana 2"
                     val aspectRatio = json.get("aspectRatio")?.asString ?: "1:1"
                     val count = json.get("count")?.asInt ?: 1
                     val outputPath = json.get("outputPath")?.asString
@@ -144,7 +218,7 @@ class FlowMcpServer(
                     val json = gson.fromJson(body, JsonObject::class.java)
                     val prompt = json.get("prompt")?.asString ?: ""
                     val imagePath = json.get("imagePath")?.asString ?: ""
-                    val model = json.get("model")?.asString ?: "nano-banana-2"
+                    val model = json.get("model")?.asString ?: "Nano Banana 2"
                     val aspectRatio = json.get("aspectRatio")?.asString ?: "1:1"
                     val count = json.get("count")?.asInt ?: 1
                     val outputPath = json.get("outputPath")?.asString
@@ -205,7 +279,7 @@ class FlowMcpServer(
                     val body = call.receiveText()
                     val json = gson.fromJson(body, JsonObject::class.java)
                     val prompt = json.get("prompt")?.asString ?: ""
-                    val model = json.get("model")?.asString ?: "veo-3.1"
+                    val model = json.get("model")?.asString ?: "Veo 3.1 - Fast"
                     val aspectRatio = json.get("aspectRatio")?.asString ?: "16:9"
                     val outputPath = json.get("outputPath")?.asString
 
@@ -270,7 +344,7 @@ class FlowMcpServer(
                                     })
                                     add("serverInfo", JsonObject().apply {
                                         addProperty("name", "google-flow-android-mcp")
-                                        addProperty("version", "2.4.0")
+                                        addProperty("version", "3.2.0")
                                     })
                                 })
                             }
@@ -294,13 +368,18 @@ class FlowMcpServer(
                                             "inputSchema": { "type": "object", "properties": {} }
                                         },
                                         {
+                                            "name": "flow_get_cookies",
+                                            "description": "Extract active session cookies from Android app for Python scraping",
+                                            "inputSchema": { "type": "object", "properties": {} }
+                                        },
+                                        {
                                             "name": "flow_generate_image",
                                             "description": "Generate an image using Google Flow / Nano Banana 2",
                                             "inputSchema": {
                                                 "type": "object",
                                                 "properties": {
                                                     "prompt": { "type": "string" },
-                                                    "model": { "type": "string", "enum": ["nano-banana-2", "nano-banana"], "default": "nano-banana-2" },
+                                                    "model": { "type": "string", "enum": ["Nano Banana 2", "Nano Banana"], "default": "Nano Banana 2" },
                                                     "aspect_ratio": { "type": "string", "enum": ["1:1", "16:9", "9:16", "4:3", "3:4", "2:3", "3:2"], "default": "1:1" },
                                                     "count": { "type": "integer", "enum": [1, 2, 3, 4], "default": 1 },
                                                     "output_path": { "type": "string" }
