@@ -1,13 +1,13 @@
 /**
- * Google Flow Android MCP Bridge (v3.1 - React Fiber & Props Direct Invocation)
- * Directly invokes React onClick, onChange, onInput handlers from DOM nodes.
+ * Google Flow Android MCP Bridge (v3.7 - True Lexical AST & Paste Command Engine)
+ * Fully integrates with Lexical RichText framework to trigger real generation requests.
  */
 
 (function() {
     if (window.FlowBridgeInitialized) return;
     window.FlowBridgeInitialized = true;
 
-    console.log("[FlowBridge v3.1] Initializing React Fiber Engine...");
+    console.log("[FlowBridge v3.7] Initializing True Lexical Engine...");
 
     let baselineUuids = [];
 
@@ -22,136 +22,100 @@
         console.log("[FlowBridge] Baseline media captured:", baselineUuids.length);
     }
 
-    function getReactProps(domNode) {
-        if (!domNode) return null;
-        const key = Object.keys(domNode).find(k => 
-            k.startsWith('__reactProps$') || 
-            k.startsWith('__reactEventHandlers$') || 
-            k.startsWith('__reactFiber$')
-        );
-        return key ? domNode[key] : null;
-    }
+    function writeToLexicalEditor(promptDiv, text) {
+        if (!promptDiv) return false;
 
-    function triggerReactClick(domButton) {
-        if (!domButton) return false;
+        promptDiv.focus();
 
-        domButton.removeAttribute('disabled');
-        domButton.disabled = false;
-        domButton.setAttribute('aria-disabled', 'false');
-
-        // 1. Try direct React props onClick
-        const props = getReactProps(domButton);
-        if (props) {
-            if (typeof props.onClick === 'function') {
-                try {
-                    props.onClick({
-                        preventDefault: () => {},
-                        stopPropagation: () => {},
-                        target: domButton,
-                        currentTarget: domButton
-                    });
-                    console.log("[FlowBridge] Successfully triggered React props.onClick() directly!");
-                } catch (e) {
-                    console.warn("[FlowBridge] React onClick error:", e);
-                }
-            }
-            if (props.children && typeof props.children.onClick === 'function') {
-                try { props.children.onClick({}); } catch (e) {}
-            }
-        }
-
-        // 2. Dispatch Pointer & Mouse events
-        ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(evt => {
-            domButton.dispatchEvent(new MouseEvent(evt, {
+        // 1. Dispatch synthetic Paste Event (Lexical PASTE_COMMAND)
+        try {
+            const dt = new DataTransfer();
+            dt.setData('text/plain', text);
+            const pasteEvt = new ClipboardEvent('paste', {
                 bubbles: true,
                 cancelable: true,
-                view: window,
-                buttons: 1
-            }));
-        });
-
-        try { domButton.click(); } catch(e) {}
-        return true;
-    }
-
-    function writePromptToContentEditable(div, text) {
-        div.focus();
-
-        // 1. Construct DOM structure with <p> inside contenteditable
-        div.innerHTML = `<p>${text}</p>`;
-
-        // 2. Trigger React props onInput / onChange directly
-        const props = getReactProps(div);
-        if (props) {
-            if (typeof props.onInput === 'function') {
-                try {
-                    props.onInput({
-                        target: div,
-                        currentTarget: div,
-                        preventDefault: () => {},
-                        stopPropagation: () => {}
-                    });
-                    console.log("[FlowBridge] Triggered React props.onInput()");
-                } catch(e) {}
-            }
-            if (typeof props.onChange === 'function') {
-                try {
-                    props.onChange({
-                        target: div,
-                        currentTarget: div,
-                        preventDefault: () => {},
-                        stopPropagation: () => {}
-                    });
-                } catch(e) {}
-            }
+                clipboardData: dt
+            });
+            promptDiv.dispatchEvent(pasteEvt);
+            console.log("[FlowBridge] Dispatched ClipboardEvent('paste')");
+        } catch (e) {
+            console.warn("[FlowBridge] Paste event error:", e);
         }
 
-        // 3. Dispatch native input events
+        // 2. Range & document.execCommand('insertText')
         try {
-            const inputEvt = new InputEvent('input', {
+            const sel = window.getSelection();
+            const range = document.createRange();
+            range.selectNodeContents(promptDiv);
+            sel.removeAllRanges();
+            sel.addRange(range);
+            document.execCommand('insertText', false, text);
+            console.log("[FlowBridge] Executed document.execCommand('insertText')");
+        } catch (e) {}
+
+        // 3. Fallback: Direct DOM & InputEvents
+        if (!promptDiv.textContent.includes(text)) {
+            promptDiv.innerHTML = `<p>${text}</p>`;
+        }
+
+        try {
+            promptDiv.dispatchEvent(new InputEvent('beforeinput', {
                 bubbles: true,
                 cancelable: true,
                 inputType: 'insertText',
                 data: text
-            });
-            div.dispatchEvent(inputEvt);
-        } catch(e) {
-            div.dispatchEvent(new Event('input', { bubbles: true }));
-        }
+            }));
+            promptDiv.dispatchEvent(new InputEvent('input', {
+                bubbles: true,
+                cancelable: true,
+                inputType: 'insertText',
+                data: text
+            }));
+        } catch (e) {}
 
-        div.dispatchEvent(new Event('change', { bubbles: true }));
-
-        // 4. Selection set to end of text
-        try {
-            const selection = window.getSelection();
-            const range = document.createRange();
-            range.selectNodeContents(div);
-            range.collapse(false);
-            selection.removeAllRanges();
-            selection.addRange(range);
-        } catch(e) {}
+        promptDiv.dispatchEvent(new Event('input', { bubbles: true }));
+        promptDiv.dispatchEvent(new Event('change', { bubbles: true }));
 
         return true;
     }
 
-    function findAndClickSubmit() {
+    function triggerSubmitAction() {
         const buttons = Array.from(document.querySelectorAll('button'));
         
-        // Find button index with arrow_forward or Oluştur
-        const submitBtn = buttons.find(b => {
-            const txt = (b.textContent || '').trim();
-            const cls = (b.className || '');
-            return txt.includes('arrow_forward') || txt.includes('Oluştur') || txt.includes('Generate') || cls.includes('kmC');
-        });
+        // Priority 1: Arrow forward submit button
+        let submitBtn = buttons.find(b => (b.textContent || '').includes('arrow_forward'));
+        
+        // Priority 2: Oluştur / Generate
+        if (!submitBtn) {
+            submitBtn = buttons.find(b => {
+                const t = (b.textContent || '').trim();
+                const cls = (b.className || '');
+                return t.includes('Oluştur') || t.includes('Generate') || cls.includes('kmC');
+            });
+        }
 
         if (submitBtn) {
-            console.log("[FlowBridge] Found submit button:", submitBtn.textContent);
-            triggerReactClick(submitBtn);
-            if (window.AndroidBridge) window.AndroidBridge.log("✓ Triggered submit button: " + submitBtn.textContent);
+            console.log("[FlowBridge] Triggering submit button:", submitBtn.textContent);
+            submitBtn.removeAttribute('disabled');
+            submitBtn.disabled = false;
+            submitBtn.setAttribute('aria-disabled', 'false');
+
+            // Dispatch full pointer and mouse sequence
+            ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(evt => {
+                submitBtn.dispatchEvent(new MouseEvent(evt, {
+                    bubbles: true,
+                    cancelable: true,
+                    view: window,
+                    buttons: 1
+                }));
+            });
+
+            try { submitBtn.click(); } catch(e) {}
+            if (window.AndroidBridge) window.AndroidBridge.log("✓ Clicked submit button: " + submitBtn.textContent);
             return true;
         }
 
-        // Fallback: Dispatch Enter on contenteditable
+        // Priority 3: Dispatched Enter Key
         const promptDiv = document.querySelector('div[contenteditable="true"], textarea');
         if (promptDiv) {
             ['keydown', 'keypress', 'keyup'].forEach(evt => {
@@ -169,15 +133,15 @@
         return false;
     }
 
-    function checkAgentConfirmation() {
+    function autoApproveDialogs() {
         const buttons = Array.from(document.querySelectorAll('button'));
         const confirmBtn = buttons.find(b => {
             const t = (b.textContent || '').trim().toLowerCase();
-            return t.includes('accepter') || t.includes('approve') || t.includes('approva') || t.includes('onayla') || t.includes('kabul et');
+            return t.includes('onayla') || t.includes('kabul') || t.includes('approve') || t.includes('accepter');
         });
         if (confirmBtn) {
-            console.log("[FlowBridge] Auto-confirming agent dialog:", confirmBtn.textContent);
-            triggerReactClick(confirmBtn);
+            console.log("[FlowBridge] Auto-approving credit/generation dialog:", confirmBtn.textContent);
+            confirmBtn.click();
             return true;
         }
         return false;
@@ -186,7 +150,7 @@
     function pollForOutput(taskId, mediaType, timeoutMs) {
         const startTime = Date.now();
         const checkInterval = setInterval(() => {
-            checkAgentConfirmation();
+            autoApproveDialogs();
 
             const foundUuids = [];
             document.querySelectorAll('img, video').forEach(el => {
@@ -203,7 +167,7 @@
             if (foundUuids.length > 0) {
                 clearInterval(checkInterval);
                 const mediaUrl = `https://labs.google/fx/api/trpc/media.getMediaUrlRedirect?name=${foundUuids[0]}`;
-                console.log("[FlowBridge] New Generated Media UUID:", foundUuids[0]);
+                console.log("[FlowBridge] New Media UUID Detected:", foundUuids[0]);
                 if (window.AndroidBridge) {
                     window.AndroidBridge.onGenerationCompleted(taskId, mediaUrl, JSON.stringify({
                         uuids: foundUuids,
@@ -288,11 +252,7 @@
                     media: media
                 };
 
-                const jsonStr = JSON.stringify(dumpObj, null, 2);
-                if (window.AndroidBridge && window.AndroidBridge.log) {
-                    window.AndroidBridge.log("=== DOM DUMP READY (" + buttons.length + " buttons, " + inputs.length + " inputs) ===");
-                }
-                return jsonStr;
+                return JSON.stringify(dumpObj, null, 2);
             } catch (err) {
                 return JSON.stringify({ error: err.toString() });
             }
@@ -303,6 +263,10 @@
             try {
                 captureBaselineUuids();
 
+                // Close any modals
+                const closeBtns = Array.from(document.querySelectorAll('button')).filter(b => (b.textContent || '').includes('Kapat') || (b.textContent || '').includes('close'));
+                closeBtns.forEach(b => b.click());
+
                 const promptDiv = Array.from(document.querySelectorAll('div[contenteditable="true"]')).find(d => 
                     d.isContentEditable || (d.textContent && (d.textContent.includes('Ne oluşturmak') || d.textContent.includes('want to create')))
                 ) || document.querySelector('div[contenteditable="true"], textarea');
@@ -312,18 +276,14 @@
                     return false;
                 }
 
-                // Construct imperative prompt for Flow agent
-                const imperativePrompt = `Genera subito un'immagine, senza farmi domande e senza chiedere chiarimenti. Attieniti FEDELMENTE a questa descrizione: includi TUTTI gli elementi, soggetti e dettagli indicati, non aggiungere nulla che non sia richiesto e non omettere nulla. Descrizione: ${prompt}`;
+                writeToLexicalEditor(promptDiv, prompt);
 
-                writePromptToContentEditable(promptDiv, imperativePrompt);
-
-                // Multi-stage trigger sequence (0ms, 300ms, 700ms)
-                setTimeout(() => { findAndClickSubmit(); }, 200);
-                setTimeout(() => { findAndClickSubmit(); }, 500);
+                setTimeout(() => { triggerSubmitAction(); }, 300);
+                setTimeout(() => { triggerSubmitAction(); }, 800);
                 setTimeout(() => {
-                    findAndClickSubmit();
+                    triggerSubmitAction();
                     pollForOutput(taskId, 'image', 240000);
-                }, 900);
+                }, 1400);
 
                 return true;
             } catch (err) {
@@ -335,11 +295,10 @@
         generateVideo: function(taskId, prompt, optionsJson) {
             console.log("[FlowBridge] generateVideo task:", taskId, prompt);
             try {
-                const options = optionsJson ? JSON.parse(optionsJson) : {};
-                const model = options.model || "Veo 3.1 - Fast";
-                const duration = options.duration || "4s";
-
                 captureBaselineUuids();
+
+                const closeBtns = Array.from(document.querySelectorAll('button')).filter(b => (b.textContent || '').includes('Kapat') || (b.textContent || '').includes('close'));
+                closeBtns.forEach(b => b.click());
 
                 const promptDiv = document.querySelector('div[contenteditable="true"], textarea');
                 if (!promptDiv) {
@@ -347,16 +306,14 @@
                     return false;
                 }
 
-                const imperativePrompt = `Genera subito un video di ${duration} con il modello ${model}, senza farmi domande e senza chiedere chiarimenti. Attieniti FEDELMENTE a questa descrizione: includi TUTTI gli elementi, soggetti, azioni e dettagli indicati, non aggiungere nulla che non sia richiesto e non omettere nulla. Descrizione: ${prompt}`;
+                writeToLexicalEditor(promptDiv, prompt);
 
-                writePromptToContentEditable(promptDiv, imperativePrompt);
-
-                setTimeout(() => { findAndClickSubmit(); }, 200);
-                setTimeout(() => { findAndClickSubmit(); }, 600);
+                setTimeout(() => { triggerSubmitAction(); }, 300);
+                setTimeout(() => { triggerSubmitAction(); }, 800);
                 setTimeout(() => {
-                    findAndClickSubmit();
+                    triggerSubmitAction();
                     pollForOutput(taskId, 'video', 480000);
-                }, 1000);
+                }, 1400);
 
                 return true;
             } catch (err) {
@@ -370,5 +327,5 @@
         window.FlowAutomation.checkAuth();
     }, 5000);
 
-    console.log("[FlowBridge v3.1] Ready.");
+    console.log("[FlowBridge v3.7] Ready.");
 })();
