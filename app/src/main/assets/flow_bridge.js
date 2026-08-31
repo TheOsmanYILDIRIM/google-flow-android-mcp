@@ -1,13 +1,14 @@
 /**
- * Google Flow & FX Suite Automation Bridge & Scraper (v2.3)
- * Comprehensive React / Next.js Input State Sync & Generate Activation
+ * Google Flow & FX Suite Automation Bridge & Scraper (v2.4)
+ * Comprehensive DOM Inspector, Multi-Language Landing Auto-Enter,
+ * and Full Page Structure Dumper.
  */
 
 (function() {
     if (window.FlowBridgeInitialized) return;
     window.FlowBridgeInitialized = true;
 
-    console.log("[FlowBridge] Initializing Google Flow & FX Automation Bridge v2.3...");
+    console.log("[FlowBridge] Initializing Google Flow Bridge v2.4...");
 
     const SELECTORS = {
         promptInputs: [
@@ -15,11 +16,12 @@
             'textarea[placeholder*="describe" i]',
             'textarea[placeholder*="image" i]',
             'textarea[placeholder*="video" i]',
-            'textarea[placeholder*="expand" i]',
+            'textarea[placeholder*="tarif" i]',
+            'textarea[placeholder*="açıkla" i]',
             'div[contenteditable="true"]',
             'div[role="textbox"]',
             'textarea',
-            'input[type="text"][placeholder*="prompt" i]',
+            'input[type="text"]',
             '[data-testid="prompt-input"]',
             '.prompt-input',
             '[aria-label*="prompt" i]'
@@ -27,38 +29,30 @@
         generateButtons: [
             'button[aria-label*="generate" i]',
             'button[aria-label*="create" i]',
-            'button[aria-label*="submit" i]',
-            'button[aria-label*="send" i]',
+            'button[aria-label*="üret" i]',
+            'button[aria-label*="oluştur" i]',
             'button:contains("Generate")',
             'button:contains("Create")',
+            'button:contains("Üret")',
+            'button:contains("Oluştur")',
             'button:contains("Try in Google Flow")',
+            'button:contains("Google Flow\'da Deneyin")',
             'button:has(svg)',
-            'button:has(i)',
             '[data-testid="generate-button"]'
         ],
-        modelDropdown: [
-            '[data-testid="model-selector"]',
-            'button[aria-label*="model" i]',
-            'button:contains("Nano Banana")',
-            'button:contains("Veo")'
-        ],
-        aspectRatioButtons: [
-            '[data-testid="aspect-ratio-selector"]',
-            'button[aria-label*="aspect" i]',
-            'button[aria-label*="ratio" i]'
-        ],
-        countButtons: [
-            '[data-testid="batch-count"]',
-            'button[aria-label*="count" i]',
-            'button[aria-label*="outputs" i]'
-        ],
-        fileInputs: [
-            'input[type="file"]',
-            '[data-testid="file-upload-input"]'
+        landingTryButtons: [
+            'button:contains("Try in Google Flow")',
+            'button:contains("Google Flow\'da Deneyin")',
+            'a:contains("Try in Google Flow")',
+            'a:contains("Google Flow\'da Deneyin")',
+            'button:contains("Deneyin")',
+            'button:contains("Try")'
         ],
         userProfile: [
             'button[aria-label*="Google Account" i]',
+            'button[aria-label*="Google Hesabı" i]',
             'img[alt*="Google Account" i]',
+            'img[alt*="Google Hesabı" i]',
             '[data-testid="user-profile"]',
             'button[aria-label*="Account" i]'
         ]
@@ -86,10 +80,6 @@
         return null;
     }
 
-    /**
-     * Injects text into React / Next.js controlled input components
-     * and forces React state synchronization.
-     */
     function triggerReactInput(element, text) {
         element.focus();
 
@@ -105,7 +95,6 @@
                 element.value = text;
             }
 
-            // Dispatch React-compatible events
             element.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
             element.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
             element.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text }));
@@ -121,39 +110,8 @@
             element.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text }));
         }
 
-        // Trigger keyboard events to ensure buttons activate
         element.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', charCode: 13, keyCode: 13, bubbles: true }));
         element.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', code: 'Enter', charCode: 13, keyCode: 13, bubbles: true }));
-    }
-
-    function clickMatchingButton(textPatterns) {
-        const buttons = Array.from(document.querySelectorAll('button, div[role="button"], span, div[role="radio"], a'));
-        for (const pattern of textPatterns) {
-            const found = buttons.find(b => b.textContent && b.textContent.trim().toLowerCase().includes(pattern.toLowerCase()));
-            if (found) {
-                found.click();
-                return true;
-            }
-        }
-        return false;
-    }
-
-    function base64ToBlob(base64Data, contentType) {
-        contentType = contentType || '';
-        const byteCharacters = atob(base64Data);
-        const byteArrays = [];
-        const sliceSize = 512;
-
-        for (let offset = 0; offset < byteCharacters.length; offset += sliceSize) {
-            const slice = byteCharacters.slice(offset, offset + sliceSize);
-            const byteNumbers = new Array(slice.length);
-            for (let i = 0; i < slice.length; i++) {
-                byteNumbers[i] = slice.charCodeAt(i);
-            }
-            const byteArray = new Uint8Array(byteNumbers);
-            byteArrays.push(byteArray);
-        }
-        return new Blob(byteArrays, { type: contentType });
     }
 
     window.FlowAutomation = {
@@ -168,42 +126,56 @@
             return isLoggedIn;
         },
 
-        getAccountInfo: function() {
-            let credits = "Active";
-            const creditEl = document.querySelector('[data-testid="credit-balance"], [aria-label*="credits" i]');
-            if (creditEl) credits = creditEl.textContent.trim();
+        dumpFullDom: function() {
+            try {
+                const buttons = Array.from(document.querySelectorAll('button, div[role="button"], a[role="button"]')).map((b, i) => ({
+                    index: i,
+                    tag: b.tagName,
+                    text: (b.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 100),
+                    ariaLabel: b.getAttribute('aria-label') || '',
+                    dataTestId: b.getAttribute('data-testid') || '',
+                    disabled: b.disabled || b.getAttribute('aria-disabled') === 'true',
+                    className: (b.className || '').toString().slice(0, 80)
+                }));
 
-            const status = {
-                url: window.location.href,
-                isLoggedIn: this.checkAuth(),
-                credits: credits,
-                supportedModels: ["nano-banana-2", "nano-banana", "veo-3.1"],
-                supportedAspectRatios: ["1:1", "16:9", "9:16", "4:3", "3:4", "2:3", "3:2"],
-                maxOutputsCount: 4,
-                timestamp: Date.now()
-            };
-            return JSON.stringify(status);
-        },
+                const inputs = Array.from(document.querySelectorAll('textarea, input, div[contenteditable="true"], div[role="textbox"]')).map((inp, i) => ({
+                    index: i,
+                    tag: inp.tagName,
+                    type: inp.getAttribute('type') || '',
+                    placeholder: inp.getAttribute('placeholder') || '',
+                    value: inp.value || inp.textContent || '',
+                    ariaLabel: inp.getAttribute('aria-label') || '',
+                    dataTestId: inp.getAttribute('data-testid') || '',
+                    isContentEditable: inp.isContentEditable
+                }));
 
-        applyModelSettings: function(model, aspectRatio, count) {
-            if (model) {
-                if (model.includes("veo")) {
-                    clickMatchingButton(["Veo 3.1", "Veo", "Video"]);
-                } else {
-                    clickMatchingButton(["Nano Banana 2", "Nano Banana", "Imagen"]);
+                const media = Array.from(document.querySelectorAll('img, video, a[download]')).map((m, i) => ({
+                    index: i,
+                    tag: m.tagName,
+                    src: (m.src || m.href || '').slice(0, 120),
+                    alt: m.getAttribute('alt') || ''
+                }));
+
+                const dumpObj = {
+                    timestamp: new Date().toISOString(),
+                    url: window.location.href,
+                    title: document.title,
+                    totalButtons: buttons.length,
+                    buttons: buttons,
+                    totalInputs: inputs.length,
+                    inputs: inputs,
+                    totalMedia: media.length,
+                    media: media
+                };
+
+                const jsonStr = JSON.stringify(dumpObj, null, 2);
+                if (window.AndroidBridge && window.AndroidBridge.log) {
+                    window.AndroidBridge.log("=== DOM DUMP READY (" + buttons.length + " buttons, " + inputs.length + " inputs) ===");
                 }
-            }
-
-            if (aspectRatio) {
-                setTimeout(() => {
-                    clickMatchingButton([aspectRatio, `Ratio ${aspectRatio}`, `Aspect ${aspectRatio}`]);
-                }, 100);
-            }
-
-            if (count && count > 1) {
-                setTimeout(() => {
-                    clickMatchingButton([`${count}x`, `${count} images`, `${count} outputs`, `${count}`]);
-                }, 200);
+                return jsonStr;
+            } catch (err) {
+                console.error("[FlowBridge] dumpFullDom error:", err);
+                return JSON.stringify({ error: err.toString() });
             }
         },
 
@@ -215,46 +187,35 @@
                 const aspectRatio = options.aspectRatio || "1:1";
                 const count = options.count || 1;
 
-                this.applyModelSettings(model, aspectRatio, count);
+                // Log full DOM dump before executing so we can trace exact elements
+                this.dumpFullDom();
 
-                const inputEl = findElement(SELECTORS.promptInputs);
-                if (!inputEl) {
-                    if (window.AndroidBridge) {
-                        window.AndroidBridge.onError(taskId, "Prompt input not found on page: " + window.location.href);
-                    }
-                    return false;
+                // If on landing page, try clicking "Try in Google Flow" first
+                const landingBtn = findElement(SELECTORS.landingTryButtons);
+                if (landingBtn) {
+                    if (window.AndroidBridge) window.AndroidBridge.log("Found landing button, clicking to enter workspace: " + landingBtn.textContent);
+                    landingBtn.click();
                 }
 
-                // Force React input state update
+                let inputEl = findElement(SELECTORS.promptInputs);
+                if (!inputEl) {
+                    // Re-check after 1s in case page transitioned
+                    setTimeout(() => {
+                        inputEl = findElement(SELECTORS.promptInputs);
+                        if (inputEl) {
+                            triggerReactInput(inputEl, prompt);
+                            this.triggerGenerate(taskId, count);
+                        } else {
+                            if (window.AndroidBridge) {
+                                window.AndroidBridge.onError(taskId, "Prompt input not found! URL: " + window.location.href);
+                            }
+                        }
+                    }, 1000);
+                    return true;
+                }
+
                 triggerReactInput(inputEl, prompt);
-
-                // Wait 400ms for React state & button enable
-                setTimeout(() => {
-                    // Try finding enabled generate button
-                    let btn = Array.from(document.querySelectorAll('button')).find(b => {
-                        const aria = (b.getAttribute('aria-label') || '').toLowerCase();
-                        const text = (b.textContent || '').toLowerCase();
-                        return (aria.includes('generate') || aria.includes('create') || text.includes('generate') || text.includes('create')) && !b.disabled;
-                    });
-
-                    if (!btn) {
-                        btn = findElement(SELECTORS.generateButtons);
-                    }
-
-                    if (btn) {
-                        btn.removeAttribute('disabled');
-                        btn.disabled = false;
-                        btn.click();
-                        console.log("[FlowBridge] Generate button clicked successfully!");
-                        this.watchForOutput(taskId, 'image', count, 180000);
-                    } else {
-                        // Fallback: send Enter keypress event to input
-                        inputEl.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, ctrlKey: true, bubbles: true }));
-                        console.log("[FlowBridge] Dispatched Ctrl+Enter fallback.");
-                        this.watchForOutput(taskId, 'image', count, 180000);
-                    }
-                }, 400);
-
+                this.triggerGenerate(taskId, count);
                 return true;
             } catch (err) {
                 console.error("[FlowBridge] generateImage error:", err);
@@ -265,105 +226,31 @@
             }
         },
 
-        generateWithReference: function(taskId, prompt, base64Image, mimeType, filename, optionsJson) {
-            console.log("[FlowBridge] generateWithReference task:", taskId);
-            try {
-                const options = optionsJson ? JSON.parse(optionsJson) : {};
-                const model = options.model || "nano-banana-2";
-                const aspectRatio = options.aspectRatio || "1:1";
-                const count = options.count || 1;
-
-                this.applyModelSettings(model, aspectRatio, count);
-
-                const blob = base64ToBlob(base64Image, mimeType || 'image/png');
-                const file = new File([blob], filename || 'reference.png', { type: mimeType || 'image/png' });
-
-                const fileInput = findElement(SELECTORS.fileInputs);
-                if (fileInput) {
-                    const dataTransfer = new DataTransfer();
-                    dataTransfer.items.add(file);
-                    fileInput.files = dataTransfer.files;
-                    fileInput.dispatchEvent(new Event('change', { bubbles: true }));
-                }
-
-                setTimeout(() => {
-                    const inputEl = findElement(SELECTORS.promptInputs);
-                    if (inputEl) triggerReactInput(inputEl, prompt);
-
-                    setTimeout(() => {
-                        const btn = findElement(SELECTORS.generateButtons);
-                        if (btn) {
-                            btn.removeAttribute('disabled');
-                            btn.disabled = false;
-                            btn.click();
-                        }
-                        this.watchForOutput(taskId, 'image', count, 200000);
-                    }, 500);
-                }, 800);
-
-                return true;
-            } catch (err) {
-                console.error("[FlowBridge] generateWithReference error:", err);
-                if (window.AndroidBridge) {
-                    window.AndroidBridge.onError(taskId, err.toString());
-                }
-                return false;
-            }
-        },
-
-        generateVideo: function(taskId, prompt, optionsJson) {
-            console.log("[FlowBridge] generateVideo (Veo 3.1) task:", taskId, prompt);
-            try {
-                const options = optionsJson ? JSON.parse(optionsJson) : {};
-                const model = options.model || "veo-3.1";
-                const aspectRatio = options.aspectRatio || "16:9";
-
-                this.applyModelSettings(model, aspectRatio, 1);
-
-                setTimeout(() => {
-                    const inputEl = findElement(SELECTORS.promptInputs);
-                    if (inputEl) triggerReactInput(inputEl, prompt);
-
-                    setTimeout(() => {
-                        const btn = findElement(SELECTORS.generateButtons);
-                        if (btn) {
-                            btn.removeAttribute('disabled');
-                            btn.disabled = false;
-                            btn.click();
-                        }
-                        this.watchForOutput(taskId, 'video', 1, 360000);
-                    }, 500);
-                }, 600);
-
-                return true;
-            } catch (err) {
-                console.error("[FlowBridge] generateVideo error:", err);
-                if (window.AndroidBridge) {
-                    window.AndroidBridge.onError(taskId, err.toString());
-                }
-                return false;
-            }
-        },
-
-        listProjects: function() {
-            const projectEls = Array.from(document.querySelectorAll('a[href*="/project/"], [data-testid="project-item"], button[aria-label*="project" i]'));
-            const projects = projectEls.map(p => ({
-                name: p.textContent.trim(),
-                url: p.href || "",
-                id: (p.href || "").split('/project/')[1] || ""
-            })).filter(p => p.name.length > 0);
-            return JSON.stringify(projects);
-        },
-
-        createProject: function(name) {
-            clickMatchingButton(["New Project", "Create Project", "+ Project"]);
+        triggerGenerate: function(taskId, count) {
             setTimeout(() => {
-                const nameInput = document.querySelector('input[placeholder*="project name" i], input[type="text"]');
-                if (nameInput) {
-                    triggerReactInput(nameInput, name);
-                    setTimeout(() => {
-                        clickMatchingButton(["Create", "Save", "Confirm"]);
-                    }, 300);
+                let btn = Array.from(document.querySelectorAll('button')).find(b => {
+                    const aria = (b.getAttribute('aria-label') || '').toLowerCase();
+                    const text = (b.textContent || '').toLowerCase();
+                    return (aria.includes('generate') || aria.includes('create') || aria.includes('üret') || aria.includes('oluştur') || text.includes('generate') || text.includes('create') || text.includes('üret') || text.includes('oluştur')) && !b.disabled;
+                });
+
+                if (!btn) {
+                    btn = findElement(SELECTORS.generateButtons);
+                }
+
+                if (btn) {
+                    btn.removeAttribute('disabled');
+                    btn.disabled = false;
+                    btn.click();
+                    if (window.AndroidBridge) window.AndroidBridge.log("Generate button clicked: " + (btn.textContent || btn.getAttribute('aria-label')));
+                    this.watchForOutput(taskId, 'image', count, 180000);
+                } else {
+                    if (window.AndroidBridge) window.AndroidBridge.log("Generate button not found, dishing Enter key.");
+                    const inputEl = findElement(SELECTORS.promptInputs);
+                    if (inputEl) {
+                        inputEl.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, ctrlKey: true, bubbles: true }));
+                    }
+                    this.watchForOutput(taskId, 'image', count, 180000);
                 }
             }, 500);
         },
@@ -391,7 +278,6 @@
                 if (validUrls.length >= expectedCount || (validUrls.length > 0 && Date.now() - startTime > 30000)) {
                     completed = true;
                     obs.disconnect();
-                    console.log("[FlowBridge] Found outputs:", validUrls);
                     if (window.AndroidBridge) {
                         window.AndroidBridge.onGenerationCompleted(taskId, validUrls[0], JSON.stringify({
                             mediaType: mediaType,
@@ -413,20 +299,6 @@
             });
 
             observer.observe(document.body, { childList: true, subtree: true, attributes: true });
-        },
-
-        discoverUi: function() {
-            const buttons = Array.from(document.querySelectorAll('button')).map(b => ({
-                text: b.textContent.trim(),
-                aria: b.getAttribute('aria-label'),
-                testId: b.getAttribute('data-testid')
-            }));
-            const inputs = Array.from(document.querySelectorAll('input, textarea')).map(i => ({
-                placeholder: i.getAttribute('placeholder'),
-                type: i.getAttribute('type'),
-                testId: i.getAttribute('data-testid')
-            }));
-            return JSON.stringify({ buttons, inputs, url: window.location.href });
         }
     };
 
@@ -434,5 +306,5 @@
         window.FlowAutomation.checkAuth();
     }, 5000);
 
-    console.log("[FlowBridge] Google Flow & FX Suite v2.3 Ready.");
+    console.log("[FlowBridge] Google Flow Bridge v2.4 Ready.");
 })();

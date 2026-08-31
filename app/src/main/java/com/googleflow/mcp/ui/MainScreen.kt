@@ -114,12 +114,23 @@ fun MainScreen(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Column {
-                            Text("Google Flow MCP v2.2", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                            Text("Google Flow MCP v2.4", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                             Text("127.0.0.1:8765 | ${if (authState) "Ready ✓" else "Giriş Bekleniyor ⚠️"}", style = MaterialTheme.typography.bodySmall, color = if (authState) Color(0xFF34A853) else Color(0xFFFBBC05))
                         }
                     }
                 },
                 actions = {
+                    IconButton(onClick = {
+                        service?.engine?.dumpDom {
+                            // DOM dump saved
+                        }
+                    }) {
+                        Icon(
+                            imageVector = Icons.Default.Code,
+                            contentDescription = "DOM Dump Al",
+                            tint = Color(0xFF81C995)
+                        )
+                    }
                     IconButton(onClick = { showCookieDialog = true }) {
                         Icon(
                             imageVector = Icons.Default.Key,
@@ -222,6 +233,15 @@ fun MainScreen(
                                     Text("VideoFX", fontSize = 12.sp)
                                 }
                                 Button(
+                                    onClick = { service?.engine?.dumpDom {} },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF81C995)),
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                                ) {
+                                    Icon(Icons.Default.Code, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("DOM Dump", color = Color.Black, fontSize = 12.sp)
+                                }
+                                Button(
                                     onClick = { showCookieDialog = true },
                                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFBBC05)),
                                     contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
@@ -289,7 +309,7 @@ fun MainScreen(
                             modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
                         ) {
                             Column(modifier = Modifier.padding(16.dp)) {
-                                Text("MCP Sunucu & Giriş Seçenekleri", fontWeight = FontWeight.Bold, color = Color.White)
+                                Text("MCP Sunucu & İnceleme Araçları", fontWeight = FontWeight.Bold, color = Color.White)
                                 Spacer(modifier = Modifier.height(8.dp))
                                 Text("• Endpoint: http://127.0.0.1:8765/sse", color = Color(0xFF8AB4F8), fontFamily = FontFamily.Monospace)
                                 Text("• Modeller: Nano Banana 2 & Veo 3.1", color = Color(0xFF81C995))
@@ -298,11 +318,11 @@ fun MainScreen(
                                 Spacer(modifier = Modifier.height(12.dp))
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     Button(
-                                        onClick = { showCookieDialog = true },
-                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFBBC05)),
+                                        onClick = { service?.engine?.dumpDom {} },
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF81C995)),
                                         modifier = Modifier.weight(1f)
                                     ) {
-                                        Text("Cookie Yapıştır", color = Color.Black, fontSize = 12.sp)
+                                        Text("DOM Dökümü Al", color = Color.Black, fontSize = 12.sp)
                                     }
                                     Button(
                                         onClick = { service?.attachTo1x1Overlay() },
@@ -414,7 +434,20 @@ fun MainScreen(
                             .fillMaxSize()
                             .padding(12.dp)
                     ) {
-                        Text("MCP Canlı Günlük (Logs)", fontWeight = FontWeight.Bold, color = Color.White)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("MCP Canlı Günlük (Logs)", fontWeight = FontWeight.Bold, color = Color.White)
+                            Button(
+                                onClick = { service?.engine?.dumpDom {} },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF81C995)),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                            ) {
+                                Text("DOM Dump Al", color = Color.Black, fontSize = 11.sp)
+                            }
+                        }
                         Spacer(modifier = Modifier.height(8.dp))
                         LazyColumn(
                             modifier = Modifier

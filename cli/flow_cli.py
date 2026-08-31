@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Google Flow MCP - Termux CLI Controller (v2.1)
-Supports Nano Banana 2, Veo 3.1, Aspect Ratios, Multi-Outputs, and Cookie/Session Injection.
+Google Flow MCP - Termux CLI Controller (v2.4)
+Supports Nano Banana 2, Veo 3.1, Aspect Ratios, Multi-Outputs, Cookie Injection, and Live DOM Dumping.
 """
 
 import sys
@@ -17,7 +17,7 @@ def check_status():
     try:
         res = requests.get(f"{BASE_URL}/api/status", timeout=5)
         data = res.json()
-        print("=== Google Flow MCP Status (v2.1) ===")
+        print("=== Google Flow MCP Status (v2.4) ===")
         print(f"Status:            {data.get('status')}")
         print(f"Auth State:        {'✓ Logged In (Ready)' if data.get('isLoggedIn') else '⚠️ Needs Login'}")
         print(f"Supported Models:  {', '.join(data.get('supportedModels', []))}")
@@ -28,6 +28,21 @@ def check_status():
     except Exception as e:
         print(f"❌ Error connecting to Flow Android App: {e}")
         print("Make sure Google Flow MCP app is running on your phone.")
+
+def dump_dom(output_file: Optional[str] = None):
+    try:
+        res = requests.get(f"{BASE_URL}/api/dom-dump", timeout=8)
+        data = res.json()
+        target_path = output_file or "flow_dom_dump.json"
+        with open(target_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+        print(f"✓ Full Live DOM Dump saved to: {os.path.abspath(target_path)}")
+        print(f"Page Title:   {data.get('title')}")
+        print(f"Page URL:     {data.get('url')}")
+        print(f"Total Buttons: {data.get('totalButtons')}")
+        print(f"Total Inputs:  {data.get('totalInputs')}")
+    except Exception as e:
+        print(f"❌ Error dumping DOM: {e}")
 
 def import_cookies(cookies: str):
     try:
@@ -70,7 +85,7 @@ def generate_image(prompt: str, model: str = "nano-banana-2", aspect_ratio: str 
         if output_path:
             payload["outputPath"] = os.path.abspath(output_path)
         
-        res = requests.post(f"{BASE_URL}/api/generate", json=payload, timeout=200)
+        res = requests.post(f"{BASE_URL}/api/generate", json=payload, timeout=240)
         data = res.json()
         if data.get("success"):
             print(f"✓ Image generated successfully with {data.get('model')} ({data.get('aspectRatio')})!")
@@ -99,7 +114,7 @@ def generate_with_reference(prompt: str, image_path: str, model: str = "nano-ban
         if output_path:
             payload["outputPath"] = os.path.abspath(output_path)
 
-        res = requests.post(f"{BASE_URL}/api/generate-with-reference", json=payload, timeout=220)
+        res = requests.post(f"{BASE_URL}/api/generate-with-reference", json=payload, timeout=260)
         data = res.json()
         if data.get("success"):
             print(f"✓ Output generated successfully!")
@@ -121,7 +136,7 @@ def generate_video(prompt: str, model: str = "veo-3.1", aspect_ratio: str = "16:
         if output_path:
             payload["outputPath"] = os.path.abspath(output_path)
 
-        res = requests.post(f"{BASE_URL}/api/video", json=payload, timeout=380)
+        res = requests.post(f"{BASE_URL}/api/video", json=payload, timeout=400)
         data = res.json()
         if data.get("success"):
             print(f"✓ Video generated successfully with {model}!")
@@ -133,11 +148,15 @@ def generate_video(prompt: str, model: str = "veo-3.1", aspect_ratio: str = "16:
         print(f"❌ Request error: {e}")
 
 def main():
-    parser = argparse.ArgumentParser(description="Google Flow Android MCP CLI Controller (v2.1)")
+    parser = argparse.ArgumentParser(description="Google Flow Android MCP CLI Controller (v2.4)")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     # status
     subparsers.add_parser("status", help="Check Flow MCP app and login status")
+
+    # dump-dom
+    dom_parser = subparsers.add_parser("dump-dom", help="Inspect and dump current real-time DOM structure")
+    dom_parser.add_argument("--output", "-o", help="Target JSON file path")
 
     # cookies
     cookie_parser = subparsers.add_parser("import-cookies", help="Inject session cookies into Android App")
@@ -161,7 +180,7 @@ def main():
     ref_parser.add_argument("--image", "-i", required=True, help="Path to reference image")
     ref_parser.add_argument("--prompt", "-p", required=True, help="Text prompt")
     ref_parser.add_argument("--model", "-m", default="nano-banana-2", choices=["nano-banana-2", "nano-banana"], help="Image model")
-    ref_parser.add_argument("--ratio", "-r", default="1:1", choices=["1:1", "16:9", "9:16", "4:3", "3:4"], help="Aspect ratio")
+    ref_parser.add_argument("--ratio", "-r", default="1:1", choices=["1:1", "16:9", "9:16", "4:3", "3:4", "2:3", "3:2"], help="Aspect ratio")
     ref_parser.add_argument("--count", "-c", type=int, default=1, choices=[1, 2, 3, 4], help="Outputs count")
     ref_parser.add_argument("--output", "-o", help="Destination file path")
 
@@ -176,6 +195,8 @@ def main():
 
     if args.command == "status":
         check_status()
+    elif args.command == "dump-dom":
+        dump_dom(args.output)
     elif args.command == "import-cookies":
         import_cookies(args.cookies)
     elif args.command == "projects":

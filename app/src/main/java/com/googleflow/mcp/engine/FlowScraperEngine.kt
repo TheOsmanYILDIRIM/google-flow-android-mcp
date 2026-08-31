@@ -163,6 +163,30 @@ class FlowScraperEngine(private val context: Context) {
         }
     }
 
+    fun dumpDom(callback: (String) -> Unit) {
+        mainHandler.post {
+            webView?.evaluateJavascript("window.FlowAutomation.dumpFullDom();") { result ->
+                val unescaped = if (result != null && result.startsWith("\"") && result.endsWith("\"")) {
+                    try {
+                        gson.fromJson(result, String::class.java)
+                    } catch (e: Exception) {
+                        result
+                    }
+                } else result ?: "{}"
+
+                try {
+                    val dir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "GoogleFlow")
+                    if (!dir.exists()) dir.mkdirs()
+                    File(dir, "dom_dump.json").writeText(unescaped)
+                    bridge.log("Saved DOM dump to Downloads/GoogleFlow/dom_dump.json")
+                } catch (e: Exception) {
+                    bridge.log("Error saving DOM dump file: ${e.message}")
+                }
+                callback(unescaped)
+            }
+        }
+    }
+
     fun loadLoginUrl() {
         mainHandler.post {
             webView?.loadUrl(loginUrl)
@@ -192,7 +216,7 @@ class FlowScraperEngine(private val context: Context) {
             val jsCode = context.assets.open("flow_bridge.js").bufferedReader().use { it.readText() }
             mainHandler.post {
                 webView?.evaluateJavascript(jsCode) { result ->
-                    bridge.log("FlowBridge v2.2 injected: $result")
+                    bridge.log("FlowBridge v2.4 injected: $result")
                 }
             }
         } catch (e: Exception) {
@@ -302,14 +326,6 @@ class FlowScraperEngine(private val context: Context) {
     fun checkStatus(callback: (String) -> Unit) {
         mainHandler.post {
             webView?.evaluateJavascript("window.FlowAutomation.getAccountInfo();") { result ->
-                callback(result ?: "{}")
-            }
-        }
-    }
-
-    fun discoverUi(callback: (String) -> Unit) {
-        mainHandler.post {
-            webView?.evaluateJavascript("window.FlowAutomation.discoverUi();") { result ->
                 callback(result ?: "{}")
             }
         }
