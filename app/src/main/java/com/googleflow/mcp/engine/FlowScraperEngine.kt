@@ -11,6 +11,8 @@ import android.webkit.WebChromeClient
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import com.google.gson.Gson
+import com.google.gson.JsonObject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -24,6 +26,7 @@ class FlowScraperEngine(private val context: Context) {
     val bridge = FlowJsBridge()
     private val mainHandler = Handler(Looper.getMainLooper())
     private val okHttpClient = OkHttpClient()
+    private val gson = Gson()
 
     var webView: WebView? = null
         private set
@@ -73,7 +76,7 @@ class FlowScraperEngine(private val context: Context) {
             val jsCode = context.assets.open("flow_bridge.js").bufferedReader().use { it.readText() }
             mainHandler.post {
                 webView?.evaluateJavascript(jsCode) { result ->
-                    bridge.log("FlowBridge injected: $result")
+                    bridge.log("FlowBridge v2.0 injected: $result")
                 }
             }
         } catch (e: Exception) {
@@ -81,27 +84,55 @@ class FlowScraperEngine(private val context: Context) {
         }
     }
 
-    fun generateImage(prompt: String, optionsJson: String? = null, callback: (String) -> Unit): String {
+    fun generateImage(
+        prompt: String,
+        model: String = "nano-banana-2",
+        aspectRatio: String = "1:1",
+        count: Int = 1,
+        callback: (String) -> Unit
+    ): String {
         val taskId = UUID.randomUUID().toString()
         val safePrompt = prompt.replace("\"", "\\\"").replace("\n", " ")
-        val safeOptions = optionsJson?.replace("\"", "\\\"") ?: "{}"
         
+        val options = JsonObject().apply {
+            addProperty("model", model)
+            addProperty("aspectRatio", aspectRatio)
+            addProperty("count", count.coerceIn(1, 4))
+        }
+        val optionsJson = gson.toJson(options).replace("\"", "\\\"")
+
         mainHandler.post {
-            val script = "window.FlowAutomation.generateImage('$taskId', \"$safePrompt\", \"$safeOptions\");"
+            val script = "window.FlowAutomation.generateImage('$taskId', \"$safePrompt\", \"$optionsJson\");"
             webView?.evaluateJavascript(script) { result ->
-                bridge.log("Executed generateImage ($taskId): $result")
+                bridge.log("Executed generateImage ($taskId) [model=$model, ratio=$aspectRatio, count=$count]: $result")
             }
         }
         callback(taskId)
         return taskId
     }
 
-    fun generateWithReference(prompt: String, base64Image: String, mimeType: String, filename: String, callback: (String) -> Unit): String {
+    fun generateWithReference(
+        prompt: String,
+        base64Image: String,
+        mimeType: String,
+        filename: String,
+        model: String = "nano-banana-2",
+        aspectRatio: String = "1:1",
+        count: Int = 1,
+        callback: (String) -> Unit
+    ): String {
         val taskId = UUID.randomUUID().toString()
         val safePrompt = prompt.replace("\"", "\\\"").replace("\n", " ")
-        
+
+        val options = JsonObject().apply {
+            addProperty("model", model)
+            addProperty("aspectRatio", aspectRatio)
+            addProperty("count", count.coerceIn(1, 4))
+        }
+        val optionsJson = gson.toJson(options).replace("\"", "\\\"")
+
         mainHandler.post {
-            val script = "window.FlowAutomation.generateWithReference('$taskId', \"$safePrompt\", '$base64Image', '$mimeType', '$filename');"
+            val script = "window.FlowAutomation.generateWithReference('$taskId', \"$safePrompt\", '$base64Image', '$mimeType', '$filename', \"$optionsJson\");"
             webView?.evaluateJavascript(script) { result ->
                 bridge.log("Executed generateWithReference ($taskId): $result")
             }
@@ -110,19 +141,46 @@ class FlowScraperEngine(private val context: Context) {
         return taskId
     }
 
-    fun generateVideo(prompt: String, optionsJson: String? = null, callback: (String) -> Unit): String {
+    fun generateVideo(
+        prompt: String,
+        model: String = "veo-3.1",
+        aspectRatio: String = "16:9",
+        callback: (String) -> Unit
+    ): String {
         val taskId = UUID.randomUUID().toString()
         val safePrompt = prompt.replace("\"", "\\\"").replace("\n", " ")
-        val safeOptions = optionsJson?.replace("\"", "\\\"") ?: "{}"
+
+        val options = JsonObject().apply {
+            addProperty("model", model)
+            addProperty("aspectRatio", aspectRatio)
+        }
+        val optionsJson = gson.toJson(options).replace("\"", "\\\"")
 
         mainHandler.post {
-            val script = "window.FlowAutomation.generateVideo('$taskId', \"$safePrompt\", \"$safeOptions\");"
+            val script = "window.FlowAutomation.generateVideo('$taskId', \"$safePrompt\", \"$optionsJson\");"
             webView?.evaluateJavascript(script) { result ->
-                bridge.log("Executed generateVideo ($taskId): $result")
+                bridge.log("Executed generateVideo ($taskId) [model=$model, ratio=$aspectRatio]: $result")
             }
         }
         callback(taskId)
         return taskId
+    }
+
+    fun listProjects(callback: (String) -> Unit) {
+        mainHandler.post {
+            webView?.evaluateJavascript("window.FlowAutomation.listProjects();") { result ->
+                callback(result ?: "[]")
+            }
+        }
+    }
+
+    fun createProject(projectName: String) {
+        val safeName = projectName.replace("\"", "\\\"")
+        mainHandler.post {
+            webView?.evaluateJavascript("window.FlowAutomation.createProject(\"$safeName\");") { result ->
+                bridge.log("Created project $safeName: $result")
+            }
+        }
     }
 
     fun checkStatus(callback: (String) -> Unit) {

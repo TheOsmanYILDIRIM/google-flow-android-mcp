@@ -1,16 +1,15 @@
 package com.googleflow.mcp.ui
 
-import android.content.Intent
-import android.net.Uri
-import android.os.Build
-import android.provider.Settings
 import android.view.ViewGroup
 import android.webkit.WebView
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -25,7 +24,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.googleflow.mcp.service.FlowOverlayService
-import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -36,14 +34,20 @@ fun MainScreen(
 ) {
     var selectedTab by remember { mutableIntStateOf(0) }
     val logs = remember { mutableStateListOf<String>() }
-    val context = LocalContext.current
-    val coroutineScope = rememberCoroutineScope()
 
-    var testPrompt by remember { mutableStateOf("A cinematic retro cyberpunk street at night, neon lights, 8k") }
+    // Generation Controls
+    var testPrompt by remember { mutableStateOf("A cinematic retro cyberpunk street, neon lights, 8k") }
+    var selectedModel by remember { mutableStateOf("nano-banana-2") }
+    var selectedRatio by remember { mutableStateOf("1:1") }
+    var outputCount by remember { mutableIntStateOf(1) }
     var isGenerating by remember { mutableStateOf(false) }
 
     val authState by service?.engine?.bridge?.authState?.collectAsState(initial = false) ?: remember { mutableStateOf(false) }
     val currentUrl by service?.engine?.bridge?.currentUrl?.collectAsState(initial = "") ?: remember { mutableStateOf("") }
+
+    val models = listOf("nano-banana-2" to "Nano Banana 2", "nano-banana" to "Nano Banana", "veo-3.1" to "Veo 3.1")
+    val aspectRatios = listOf("1:1", "16:9", "9:16", "4:3", "3:4", "2:3", "3:2")
+    val counts = listOf(1, 2, 3, 4)
 
     LaunchedEffect(service) {
         service?.engine?.bridge?.logs?.collect { logMsg ->
@@ -64,8 +68,8 @@ fun MainScreen(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Column {
-                            Text("Google Flow MCP", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                            Text("127.0.0.1:8765 | ${if (authState) "Logged In ✓" else "Needs Login ⚠️"}", style = MaterialTheme.typography.bodySmall, color = if (authState) Color(0xFF34A853) else Color(0xFFFBBC05))
+                            Text("Google Flow MCP v2.0", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                            Text("127.0.0.1:8765 | ${if (authState) "Ready (Nano Banana 2 & Veo 3.1)" else "Needs Login ⚠️"}", style = MaterialTheme.typography.bodySmall, color = if (authState) Color(0xFF34A853) else Color(0xFFFBBC05))
                         }
                     }
                 },
@@ -120,7 +124,6 @@ fun MainScreen(
         ) {
             when (selectedTab) {
                 0 -> {
-                    // Fullscreen interactive WebView for Google Login
                     if (service != null) {
                         AndroidView(
                             factory = { ctx ->
@@ -143,11 +146,11 @@ fun MainScreen(
                     }
                 }
                 1 -> {
-                    // Dashboard & Quick Controls
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
                             .padding(16.dp)
+                            .verticalScroll(rememberScrollState())
                     ) {
                         if (!isOverlayPermissionGranted) {
                             Card(
@@ -162,7 +165,7 @@ fun MainScreen(
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text("Overlay İzni Gerekli", fontWeight = FontWeight.Bold, color = Color.White)
-                                        Text("1x1 arka plan penceresi için izin verin.", fontSize = 12.sp, color = Color.LightGray)
+                                        Text("1x1 görünmez arka plan penceresi için izin verin.", fontSize = 12.sp, color = Color.LightGray)
                                     }
                                     Button(onClick = onOpenOverlayPermissionSettings) {
                                         Text("İzin Ver")
@@ -176,23 +179,21 @@ fun MainScreen(
                             modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
                         ) {
                             Column(modifier = Modifier.padding(16.dp)) {
-                                Text("MCP Sunucu Durumu", fontWeight = FontWeight.Bold, color = Color.White)
+                                Text("MCP Sunucu & Durum", fontWeight = FontWeight.Bold, color = Color.White)
                                 Spacer(modifier = Modifier.height(8.dp))
-                                Text("• Port: http://127.0.0.1:8765/sse", color = Color(0xFF8AB4F8), fontFamily = FontFamily.Monospace)
-                                Text("• Oturum: ${if (authState) "Açık (Hazır)" else "Giriş Yapılmalı"}", color = if (authState) Color(0xFF34A853) else Color(0xFFEA4335))
-                                Text("• URL: $currentUrl", maxLines = 1, fontSize = 12.sp, color = Color.Gray)
+                                Text("• Endpoint: http://127.0.0.1:8765/sse", color = Color(0xFF8AB4F8), fontFamily = FontFamily.Monospace)
+                                Text("• Modeller: Nano Banana 2 & Veo 3.1", color = Color(0xFF81C995))
+                                Text("• Oturum: ${if (authState) "Açık (Hazır)" else "Giriş Bekleniyor ⚠️"}", color = if (authState) Color(0xFF34A853) else Color(0xFFEA4335))
                                 
                                 Spacer(modifier = Modifier.height(12.dp))
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    Button(
-                                        onClick = { service?.attachTo1x1Overlay() },
-                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF34A853)),
-                                        modifier = Modifier.weight(1f)
-                                    ) {
-                                        Icon(Icons.Default.Minimize, contentDescription = null)
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text("1x1 Arka Plana Al")
-                                    }
+                                Button(
+                                    onClick = { service?.attachTo1x1Overlay() },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF34A853)),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Icon(Icons.Default.Minimize, contentDescription = null)
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("1x1 Görünmez Arka Plana Al")
                                 }
                             }
                         }
@@ -202,8 +203,57 @@ fun MainScreen(
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Column(modifier = Modifier.padding(16.dp)) {
-                                Text("Hızlı Üretim Testi", fontWeight = FontWeight.Bold, color = Color.White)
+                                Text("Parametrik Üretim Testi", fontWeight = FontWeight.Bold, color = Color.White)
                                 Spacer(modifier = Modifier.height(8.dp))
+
+                                // Model Seçimi
+                                Text("Model:", fontSize = 12.sp, color = Color.Gray)
+                                Row(
+                                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    models.forEach { (key, label) ->
+                                        FilterChip(
+                                            selected = selectedModel == key,
+                                            onClick = { selectedModel = key },
+                                            label = { Text(label) }
+                                        )
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(8.dp))
+
+                                // Oran (Aspect Ratio) Seçimi
+                                Text("En/Boy Oranı (Aspect Ratio):", fontSize = 12.sp, color = Color.Gray)
+                                Row(
+                                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    aspectRatios.forEach { ratio ->
+                                        FilterChip(
+                                            selected = selectedRatio == ratio,
+                                            onClick = { selectedRatio = ratio },
+                                            label = { Text(ratio) }
+                                        )
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(8.dp))
+
+                                // Çoklu Üretim (Count)
+                                Text("Çoklu Çıktı Sayısı (Batch Count):", fontSize = 12.sp, color = Color.Gray)
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    counts.forEach { c ->
+                                        FilterChip(
+                                            selected = outputCount == c,
+                                            onClick = { outputCount = c },
+                                            label = { Text("${c}x") }
+                                        )
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(12.dp))
+
                                 OutlinedTextField(
                                     value = testPrompt,
                                     onValueChange = { testPrompt = it },
@@ -215,35 +265,29 @@ fun MainScreen(
                                         focusedBorderColor = Color(0xFF4285F4)
                                     )
                                 )
-                                Spacer(modifier = Modifier.height(8.dp))
+
+                                Spacer(modifier = Modifier.height(12.dp))
+
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     Button(
                                         onClick = {
                                             if (service != null && !isGenerating) {
                                                 isGenerating = true
-                                                service.engine.generateImage(testPrompt) {
-                                                    isGenerating = false
+                                                if (selectedModel.contains("veo")) {
+                                                    service.engine.generateVideo(testPrompt, selectedModel, selectedRatio) {
+                                                        isGenerating = false
+                                                    }
+                                                } else {
+                                                    service.engine.generateImage(testPrompt, selectedModel, selectedRatio, outputCount) {
+                                                        isGenerating = false
+                                                    }
                                                 }
                                             }
                                         },
                                         enabled = !isGenerating,
-                                        modifier = Modifier.weight(1f)
+                                        modifier = Modifier.fillMaxWidth()
                                     ) {
-                                        Text(if (isGenerating) "Üretiliyor..." else "Görsel Üret")
-                                    }
-                                    Button(
-                                        onClick = {
-                                            if (service != null && !isGenerating) {
-                                                isGenerating = true
-                                                service.engine.generateVideo(testPrompt) {
-                                                    isGenerating = false
-                                                }
-                                            }
-                                        },
-                                        enabled = !isGenerating,
-                                        modifier = Modifier.weight(1f)
-                                    ) {
-                                        Text("Video Üret (Veo)")
+                                        Text(if (isGenerating) "Üretiliyor..." else "Test Başlat ($selectedModel, $selectedRatio, ${outputCount}x)")
                                     }
                                 }
                             }
@@ -251,7 +295,6 @@ fun MainScreen(
                     }
                 }
                 2 -> {
-                    // Live Terminal / Logs
                     Column(
                         modifier = Modifier
                             .fillMaxSize()

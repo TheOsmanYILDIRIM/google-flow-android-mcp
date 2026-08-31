@@ -51,7 +51,6 @@ class FlowMcpServer(private val engine: FlowScraperEngine, private val port: Int
             }
 
             routing {
-                // MCP SSE endpoint
                 get("/sse") {
                     call.respondText(
                         "event: endpoint\ndata: /mcp\n\n",
@@ -59,7 +58,6 @@ class FlowMcpServer(private val engine: FlowScraperEngine, private val port: Int
                     )
                 }
 
-                // Health & Status
                 get("/api/status") {
                     val auth = engine.bridge.authState.value
                     val url = engine.bridge.currentUrl.value
@@ -67,12 +65,14 @@ class FlowMcpServer(private val engine: FlowScraperEngine, private val port: Int
                         "status" to "ok",
                         "isLoggedIn" to auth,
                         "currentUrl" to url,
+                        "supportedModels" to listOf("nano-banana-2", "nano-banana", "veo-3.1"),
+                        "supportedAspectRatios" to listOf("1:1", "16:9", "9:16", "4:3", "3:4", "2:3", "3:2", "21:9"),
+                        "maxOutputsCount" to 4,
                         "port" to port
                     )
                     call.respond(response)
                 }
 
-                // MCP JSON-RPC 2.0 Handlers
                 post("/mcp") {
                     val body = call.receiveText()
                     val jsonRpc = try {
@@ -95,7 +95,7 @@ class FlowMcpServer(private val engine: FlowScraperEngine, private val port: Int
                                 addProperty("protocolVersion", "2024-11-05")
                                 val serverInfo = JsonObject().apply {
                                     addProperty("name", "google-flow-android-mcp")
-                                    addProperty("version", "1.0.0")
+                                    addProperty("version", "2.0.0")
                                 }
                                 add("serverInfo", serverInfo)
                                 val capabilities = JsonObject().apply {
@@ -129,7 +129,7 @@ class FlowMcpServer(private val engine: FlowScraperEngine, private val port: Int
                     }
                 }
 
-                // REST API direct endpoints for lightweight scripting
+                // REST API direct endpoints
                 post("/api/generate") {
                     val req = try {
                         gson.fromJson(call.receiveText(), JsonObject::class.java)
@@ -137,9 +137,12 @@ class FlowMcpServer(private val engine: FlowScraperEngine, private val port: Int
                         null
                     }
                     val prompt = req?.get("prompt")?.asString ?: ""
+                    val model = req?.get("model")?.asString ?: "nano-banana-2"
+                    val aspectRatio = req?.get("aspectRatio")?.asString ?: "1:1"
+                    val count = req?.get("count")?.asInt ?: 1
                     val customPath = req?.get("outputPath")?.asString
 
-                    val result = executeGenerateImage(prompt, customPath)
+                    val result = executeGenerateImage(prompt, model, aspectRatio, count, customPath)
                     call.respond(result)
                 }
 
@@ -147,19 +150,37 @@ class FlowMcpServer(private val engine: FlowScraperEngine, private val port: Int
                     val req = gson.fromJson(call.receiveText(), JsonObject::class.java)
                     val prompt = req.get("prompt")?.asString ?: ""
                     val imagePath = req.get("imagePath")?.asString ?: ""
+                    val model = req.get("model")?.asString ?: "nano-banana-2"
+                    val aspectRatio = req.get("aspectRatio")?.asString ?: "1:1"
+                    val count = req.get("count")?.asInt ?: 1
                     val customPath = req.get("outputPath")?.asString
 
-                    val result = executeGenerateWithReference(prompt, imagePath, customPath)
+                    val result = executeGenerateWithReference(prompt, imagePath, model, aspectRatio, count, customPath)
                     call.respond(result)
                 }
 
                 post("/api/video") {
                     val req = gson.fromJson(call.receiveText(), JsonObject::class.java)
                     val prompt = req.get("prompt")?.asString ?: ""
+                    val model = req.get("model")?.asString ?: "veo-3.1"
+                    val aspectRatio = req.get("aspectRatio")?.asString ?: "16:9"
                     val customPath = req.get("outputPath")?.asString
 
-                    val result = executeGenerateVideo(prompt, customPath)
+                    val result = executeGenerateVideo(prompt, model, aspectRatio, customPath)
                     call.respond(result)
+                }
+
+                get("/api/projects") {
+                    var projectsJson = "[]"
+                    engine.listProjects { projectsJson = it }
+                    call.respondText(projectsJson, ContentType.Application.Json)
+                }
+
+                post("/api/projects") {
+                    val req = gson.fromJson(call.receiveText(), JsonObject::class.java)
+                    val name = req.get("name")?.asString ?: "New Project"
+                    engine.createProject(name)
+                    call.respond(mapOf("success" to true, "name" to name))
                 }
             }
         }.start(wait = false)
@@ -175,7 +196,7 @@ class FlowMcpServer(private val engine: FlowScraperEngine, private val port: Int
 
         list.add(JsonObject().apply {
             addProperty("name", "flow_status")
-            addProperty("description", "Checks authentication, account status, and Google Flow ready state")
+            addProperty("description", "Checks auth status, active models (Nano Banana 2, Veo 3.1), and credit balance")
             add("inputSchema", JsonObject().apply {
                 addProperty("type", "object")
                 add("properties", JsonObject())
@@ -184,7 +205,7 @@ class FlowMcpServer(private val engine: FlowScraperEngine, private val port: Int
 
         list.add(JsonObject().apply {
             addProperty("name", "flow_generate_image")
-            addProperty("description", "Generates an AI image using Google Flow Imagen model from text prompt")
+            addProperty("description", "Generates AI images using Nano Banana 2 with custom aspect ratios and multi-output batch count (1x-4x)")
             add("inputSchema", JsonObject().apply {
                 addProperty("type", "object")
                 val props = JsonObject().apply {
@@ -192,9 +213,21 @@ class FlowMcpServer(private val engine: FlowScraperEngine, private val port: Int
                         addProperty("type", "string")
                         addProperty("description", "Detailed text prompt for image generation")
                     })
+                    add("model", JsonObject().apply {
+                        addProperty("type", "string")
+                        addProperty("description", "Image model: 'nano-banana-2' (default) or 'nano-banana'")
+                    })
+                    add("aspect_ratio", JsonObject().apply {
+                        addProperty("type", "string")
+                        addProperty("description", "Aspect ratio: '1:1', '16:9', '9:16', '4:3', '3:4', '2:3', '3:2', '21:9'")
+                    })
+                    add("count", JsonObject().apply {
+                        addProperty("type", "integer")
+                        addProperty("description", "Number of variations to generate simultaneously: 1, 2, 3, or 4")
+                    })
                     add("outputPath", JsonObject().apply {
                         addProperty("type", "string")
-                        addProperty("description", "Optional local output file path to save the generated image")
+                        addProperty("description", "Optional local destination path to save output image")
                     })
                 }
                 add("properties", props)
@@ -205,21 +238,33 @@ class FlowMcpServer(private val engine: FlowScraperEngine, private val port: Int
 
         list.add(JsonObject().apply {
             addProperty("name", "flow_generate_image_with_references")
-            addProperty("description", "Generates a new AI image conditioned on a reference image (Image-to-Image / Style Transfer)")
+            addProperty("description", "Generates new AI images conditioned on a reference image with aspect ratio and multi-count options")
             add("inputSchema", JsonObject().apply {
                 addProperty("type", "object")
                 val props = JsonObject().apply {
                     add("prompt", JsonObject().apply {
                         addProperty("type", "string")
-                        addProperty("description", "Prompt describing transformation or new image")
+                        addProperty("description", "Transformation prompt")
                     })
                     add("imagePath", JsonObject().apply {
                         addProperty("type", "string")
-                        addProperty("description", "Absolute local path to the reference image on phone/Termux")
+                        addProperty("description", "Absolute path to reference image")
+                    })
+                    add("model", JsonObject().apply {
+                        addProperty("type", "string")
+                        addProperty("description", "Model: 'nano-banana-2' or 'nano-banana'")
+                    })
+                    add("aspect_ratio", JsonObject().apply {
+                        addProperty("type", "string")
+                        addProperty("description", "Aspect ratio: '1:1', '16:9', '9:16', '4:3', '3:4'")
+                    })
+                    add("count", JsonObject().apply {
+                        addProperty("type", "integer")
+                        addProperty("description", "Number of outputs (1-4)")
                     })
                     add("outputPath", JsonObject().apply {
                         addProperty("type", "string")
-                        addProperty("description", "Optional local destination path for output")
+                        addProperty("description", "Optional local destination path")
                     })
                 }
                 add("properties", props)
@@ -233,17 +278,25 @@ class FlowMcpServer(private val engine: FlowScraperEngine, private val port: Int
 
         list.add(JsonObject().apply {
             addProperty("name", "flow_generate_video")
-            addProperty("description", "Generates an AI video using Google Veo-2 model from text prompt")
+            addProperty("description", "Generates AI video using Veo 3.1 model from text prompt")
             add("inputSchema", JsonObject().apply {
                 addProperty("type", "object")
                 val props = JsonObject().apply {
                     add("prompt", JsonObject().apply {
                         addProperty("type", "string")
-                        addProperty("description", "Text prompt for video generation")
+                        addProperty("description", "Video description prompt")
+                    })
+                    add("model", JsonObject().apply {
+                        addProperty("type", "string")
+                        addProperty("description", "Video model: 'veo-3.1'")
+                    })
+                    add("aspect_ratio", JsonObject().apply {
+                        addProperty("type", "string")
+                        addProperty("description", "Aspect ratio: '16:9' or '9:16'")
                     })
                     add("outputPath", JsonObject().apply {
                         addProperty("type", "string")
-                        addProperty("description", "Optional local path to save the MP4 video")
+                        addProperty("description", "Destination MP4 file path")
                     })
                 }
                 add("properties", props)
@@ -253,11 +306,28 @@ class FlowMcpServer(private val engine: FlowScraperEngine, private val port: Int
         })
 
         list.add(JsonObject().apply {
-            addProperty("name", "flow_discover_ui")
-            addProperty("description", "Inspects current Google Flow page DOM elements for troubleshooting")
+            addProperty("name", "flow_list_projects")
+            addProperty("description", "Lists all user projects and folders in Google Flow")
             add("inputSchema", JsonObject().apply {
                 addProperty("type", "object")
                 add("properties", JsonObject())
+            })
+        })
+
+        list.add(JsonObject().apply {
+            addProperty("name", "flow_create_project")
+            addProperty("description", "Creates a new category/project workspace in Google Flow")
+            add("inputSchema", JsonObject().apply {
+                addProperty("type", "object")
+                val props = JsonObject().apply {
+                    add("name", JsonObject().apply {
+                        addProperty("type", "string")
+                        addProperty("description", "Name of the new project")
+                    })
+                }
+                add("properties", props)
+                val req = JsonArray().apply { add("name") }
+                add("required", req)
             })
         })
 
@@ -273,31 +343,44 @@ class FlowMcpServer(private val engine: FlowScraperEngine, private val port: Int
             "flow_status" -> {
                 val auth = engine.bridge.authState.value
                 val url = engine.bridge.currentUrl.value
-                textObj.addProperty("text", "Status: ${if (auth) "Logged In & Ready" else "Needs Login"}\nURL: $url")
+                textObj.addProperty("text", "Status: ${if (auth) "Logged In & Ready" else "Needs Login"}\nURL: $url\nModels: Nano Banana 2, Veo 3.1\nMax Batch Count: 4x")
             }
             "flow_generate_image" -> {
                 val prompt = args.get("prompt")?.asString ?: ""
+                val model = args.get("model")?.asString ?: "nano-banana-2"
+                val ratio = args.get("aspect_ratio")?.asString ?: "1:1"
+                val count = args.get("count")?.asInt ?: 1
                 val outputPath = args.get("outputPath")?.asString
-                val res = executeGenerateImage(prompt, outputPath)
+                val res = executeGenerateImage(prompt, model, ratio, count, outputPath)
                 textObj.addProperty("text", gson.toJson(res))
             }
             "flow_generate_image_with_references" -> {
                 val prompt = args.get("prompt")?.asString ?: ""
                 val imgPath = args.get("imagePath")?.asString ?: ""
+                val model = args.get("model")?.asString ?: "nano-banana-2"
+                val ratio = args.get("aspect_ratio")?.asString ?: "1:1"
+                val count = args.get("count")?.asInt ?: 1
                 val outputPath = args.get("outputPath")?.asString
-                val res = executeGenerateWithReference(prompt, imgPath, outputPath)
+                val res = executeGenerateWithReference(prompt, imgPath, model, ratio, count, outputPath)
                 textObj.addProperty("text", gson.toJson(res))
             }
             "flow_generate_video" -> {
                 val prompt = args.get("prompt")?.asString ?: ""
+                val model = args.get("model")?.asString ?: "veo-3.1"
+                val ratio = args.get("aspect_ratio")?.asString ?: "16:9"
                 val outputPath = args.get("outputPath")?.asString
-                val res = executeGenerateVideo(prompt, outputPath)
+                val res = executeGenerateVideo(prompt, model, ratio, outputPath)
                 textObj.addProperty("text", gson.toJson(res))
             }
-            "flow_discover_ui" -> {
-                var uiData = "{}"
-                engine.discoverUi { uiData = it }
-                textObj.addProperty("text", uiData)
+            "flow_list_projects" -> {
+                var projects = "[]"
+                engine.listProjects { projects = it }
+                textObj.addProperty("text", projects)
+            }
+            "flow_create_project" -> {
+                val name = args.get("name")?.asString ?: "Project"
+                engine.createProject(name)
+                textObj.addProperty("text", "Project creation requested: $name")
             }
             else -> {
                 textObj.addProperty("text", "Unknown tool: $toolName")
@@ -310,11 +393,17 @@ class FlowMcpServer(private val engine: FlowScraperEngine, private val port: Int
         }
     }
 
-    private suspend fun executeGenerateImage(prompt: String, outputPath: String?): Map<String, Any> {
+    private suspend fun executeGenerateImage(
+        prompt: String,
+        model: String,
+        aspectRatio: String,
+        count: Int,
+        outputPath: String?
+    ): Map<String, Any> {
         var taskId = ""
-        engine.generateImage(prompt) { taskId = it }
+        engine.generateImage(prompt, model, aspectRatio, count) { taskId = it }
 
-        val result = withTimeoutOrNull(120000) {
+        val result = withTimeoutOrNull(180000) {
             engine.bridge.generationEvents.first { it.taskId == taskId }
         }
 
@@ -327,9 +416,12 @@ class FlowMcpServer(private val engine: FlowScraperEngine, private val port: Int
             mapOf(
                 "success" to true,
                 "taskId" to taskId,
+                "model" to model,
+                "aspectRatio" to aspectRatio,
+                "count" to count,
                 "mediaUrl" to result.mediaUrl,
                 "localPath" to (file?.absolutePath ?: ""),
-                "message" to "Image generated successfully"
+                "message" to "Image generated with $model ($aspectRatio)"
             )
         } else {
             mapOf(
@@ -340,7 +432,14 @@ class FlowMcpServer(private val engine: FlowScraperEngine, private val port: Int
         }
     }
 
-    private suspend fun executeGenerateWithReference(prompt: String, imagePath: String, outputPath: String?): Map<String, Any> {
+    private suspend fun executeGenerateWithReference(
+        prompt: String,
+        imagePath: String,
+        model: String,
+        aspectRatio: String,
+        count: Int,
+        outputPath: String?
+    ): Map<String, Any> {
         val file = File(imagePath)
         if (!file.exists()) {
             return mapOf("success" to false, "error" to "Reference image not found: $imagePath")
@@ -351,9 +450,9 @@ class FlowMcpServer(private val engine: FlowScraperEngine, private val port: Int
         val mimeType = if (file.name.endsWith(".png", true)) "image/png" else "image/jpeg"
 
         var taskId = ""
-        engine.generateWithReference(prompt, base64, mimeType, file.name) { taskId = it }
+        engine.generateWithReference(prompt, base64, mimeType, file.name, model, aspectRatio, count) { taskId = it }
 
-        val result = withTimeoutOrNull(150000) {
+        val result = withTimeoutOrNull(200000) {
             engine.bridge.generationEvents.first { it.taskId == taskId }
         }
 
@@ -366,9 +465,11 @@ class FlowMcpServer(private val engine: FlowScraperEngine, private val port: Int
             mapOf(
                 "success" to true,
                 "taskId" to taskId,
+                "model" to model,
+                "aspectRatio" to aspectRatio,
                 "mediaUrl" to result.mediaUrl,
                 "localPath" to (savedFile?.absolutePath ?: ""),
-                "message" to "Image-to-image generated successfully"
+                "message" to "Reference generation succeeded with $model"
             )
         } else {
             mapOf(
@@ -379,11 +480,16 @@ class FlowMcpServer(private val engine: FlowScraperEngine, private val port: Int
         }
     }
 
-    private suspend fun executeGenerateVideo(prompt: String, outputPath: String?): Map<String, Any> {
+    private suspend fun executeGenerateVideo(
+        prompt: String,
+        model: String,
+        aspectRatio: String,
+        outputPath: String?
+    ): Map<String, Any> {
         var taskId = ""
-        engine.generateVideo(prompt) { taskId = it }
+        engine.generateVideo(prompt, model, aspectRatio) { taskId = it }
 
-        val result = withTimeoutOrNull(300000) {
+        val result = withTimeoutOrNull(360000) {
             engine.bridge.generationEvents.first { it.taskId == taskId }
         }
 
@@ -396,9 +502,11 @@ class FlowMcpServer(private val engine: FlowScraperEngine, private val port: Int
             mapOf(
                 "success" to true,
                 "taskId" to taskId,
+                "model" to model,
+                "aspectRatio" to aspectRatio,
                 "mediaUrl" to result.mediaUrl,
                 "localPath" to (file?.absolutePath ?: ""),
-                "message" to "Video generated successfully"
+                "message" to "Video generated successfully with $model"
             )
         } else {
             mapOf(

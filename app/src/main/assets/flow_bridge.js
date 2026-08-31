@@ -1,14 +1,18 @@
 /**
- * Google Flow MCP Automation Bridge & Scraper
- * Injected into Google Flow WebView to provide full DOM automation,
- * mutation observation, asset extraction and MCP tool bindings.
+ * Google Flow MCP Automation Bridge & Scraper (v2.0)
+ * Updated for latest Google Flow:
+ * - Nano Banana 2 & Nano Banana Image Models
+ * - Veo 3.1 Video Model
+ * - Aspect Ratios (1:1, 16:9, 9:16, 4:3, 3:4, 2:3, 3:2, 21:9)
+ * - Multi-output batch generation (1x, 2x, 3x, 4x)
+ * - Project management & categorization
  */
 
 (function() {
     if (window.FlowBridgeInitialized) return;
     window.FlowBridgeInitialized = true;
 
-    console.log("[FlowBridge] Initializing Google Flow Automation Bridge...");
+    console.log("[FlowBridge] Initializing Google Flow v2.0 Automation Bridge...");
 
     const SELECTORS = {
         promptInputs: [
@@ -27,11 +31,26 @@
             'button:contains("Create")',
             '[data-testid="generate-button"]'
         ],
-        mediaItems: [
-            'img[src*="googleusercontent"]',
-            'video[src*="blob:"]',
-            'video[src*="googleusercontent"]',
-            '[data-testid="media-card"]'
+        modelDropdown: [
+            '[data-testid="model-selector"]',
+            'button[aria-label*="model" i]',
+            'button:contains("Nano Banana")',
+            'button:contains("Veo")'
+        ],
+        aspectRatioButtons: [
+            '[data-testid="aspect-ratio-selector"]',
+            'button[aria-label*="aspect" i]',
+            'button[aria-label*="ratio" i]'
+        ],
+        countButtons: [
+            '[data-testid="batch-count"]',
+            'button[aria-label*="count" i]',
+            'button[aria-label*="outputs" i]'
+        ],
+        projectDropdown: [
+            '[data-testid="project-selector"]',
+            'button[aria-label*="project" i]',
+            'a[href*="/project/"]'
         ],
         fileInputs: [
             'input[type="file"]',
@@ -49,7 +68,7 @@
             try {
                 if (selector.includes(':contains(')) {
                     const text = selector.match(/:contains\("([^"]+)"\)/)[1];
-                    const elements = Array.from(document.querySelectorAll('button, span, div'));
+                    const elements = Array.from(document.querySelectorAll('button, span, div, a'));
                     const found = elements.find(el => el.textContent && el.textContent.trim().toLowerCase().includes(text.toLowerCase()));
                     if (found) return found;
                 } else {
@@ -71,6 +90,18 @@
             element.textContent = text;
             element.dispatchEvent(new Event('input', { bubbles: true }));
         }
+    }
+
+    function clickMatchingButton(textPatterns) {
+        const buttons = Array.from(document.querySelectorAll('button, div[role="button"], span, div[role="radio"]'));
+        for (const pattern of textPatterns) {
+            const found = buttons.find(b => b.textContent && b.textContent.trim().toLowerCase().includes(pattern.toLowerCase()));
+            if (found) {
+                found.click();
+                return true;
+            }
+        }
+        return false;
     }
 
     function base64ToBlob(base64Data, contentType) {
@@ -112,15 +143,49 @@
                 url: window.location.href,
                 isLoggedIn: this.checkAuth(),
                 credits: credits,
+                supportedModels: ["nano-banana-2", "nano-banana", "veo-3.1"],
+                supportedAspectRatios: ["1:1", "16:9", "9:16", "4:3", "3:4", "2:3", "3:2", "21:9"],
+                maxOutputsCount: 4,
                 timestamp: Date.now()
             };
             return JSON.stringify(status);
         },
 
+        applyModelSettings: function(model, aspectRatio, count) {
+            // Select Model (Nano Banana 2 / Veo 3.1)
+            if (model) {
+                if (model.includes("veo")) {
+                    clickMatchingButton(["Veo 3.1", "Veo 3", "Veo", "Video"]);
+                } else {
+                    clickMatchingButton(["Nano Banana 2", "Nano Banana", "Imagen"]);
+                }
+            }
+
+            // Select Aspect Ratio (1:1, 16:9, 9:16, 4:3, etc.)
+            if (aspectRatio) {
+                setTimeout(() => {
+                    clickMatchingButton([aspectRatio, `Ratio ${aspectRatio}`, `Aspect ${aspectRatio}`]);
+                }, 100);
+            }
+
+            // Select Outputs Count (1x, 2x, 3x, 4x)
+            if (count && count > 1) {
+                setTimeout(() => {
+                    clickMatchingButton([`${count}x`, `${count} images`, `${count} outputs`, `${count}`]);
+                }, 200);
+            }
+        },
+
         generateImage: function(taskId, prompt, optionsJson) {
-            console.log("[FlowBridge] Starting image generation task:", taskId, prompt);
+            console.log("[FlowBridge] generateImage task:", taskId, prompt);
             try {
                 const options = optionsJson ? JSON.parse(optionsJson) : {};
+                const model = options.model || "nano-banana-2";
+                const aspectRatio = options.aspectRatio || "1:1";
+                const count = options.count || 1;
+
+                this.applyModelSettings(model, aspectRatio, count);
+
                 const inputEl = findElement(SELECTORS.promptInputs);
                 if (!inputEl) {
                     if (window.AndroidBridge) {
@@ -140,10 +205,10 @@
                         return;
                     }
                     btn.click();
-                    console.log("[FlowBridge] Generate clicked. Watching for output...");
+                    console.log("[FlowBridge] Generate clicked with model:", model, "ratio:", aspectRatio, "count:", count);
 
-                    // Monitor for generated image
-                    this.watchForOutput(taskId, 'image', 120000);
+                    // Watch for output (handles single or multiple images up to 4x)
+                    this.watchForOutput(taskId, 'image', count, 180000);
                 }, 500);
 
                 return true;
@@ -156,9 +221,16 @@
             }
         },
 
-        generateWithReference: function(taskId, prompt, base64Image, mimeType, filename) {
-            console.log("[FlowBridge] Uploading reference image and generating:", taskId);
+        generateWithReference: function(taskId, prompt, base64Image, mimeType, filename, optionsJson) {
+            console.log("[FlowBridge] generateWithReference task:", taskId);
             try {
+                const options = optionsJson ? JSON.parse(optionsJson) : {};
+                const model = options.model || "nano-banana-2";
+                const aspectRatio = options.aspectRatio || "1:1";
+                const count = options.count || 1;
+
+                this.applyModelSettings(model, aspectRatio, count);
+
                 const blob = base64ToBlob(base64Image, mimeType || 'image/png');
                 const file = new File([blob], filename || 'reference.png', { type: mimeType || 'image/png' });
 
@@ -168,13 +240,18 @@
                     dataTransfer.items.add(file);
                     fileInput.files = dataTransfer.files;
                     fileInput.dispatchEvent(new Event('change', { bubbles: true }));
-                } else {
-                    console.warn("[FlowBridge] No file input found, trying dropzone dispatch");
                 }
 
                 setTimeout(() => {
-                    this.generateImage(taskId, prompt, null);
-                }, 1000);
+                    const inputEl = findElement(SELECTORS.promptInputs);
+                    if (inputEl) triggerInputEvents(inputEl, prompt);
+
+                    setTimeout(() => {
+                        const btn = findElement(SELECTORS.generateButtons);
+                        if (btn) btn.click();
+                        this.watchForOutput(taskId, 'image', count, 200000);
+                    }, 500);
+                }, 800);
 
                 return true;
             } catch (err) {
@@ -187,17 +264,24 @@
         },
 
         generateVideo: function(taskId, prompt, optionsJson) {
-            console.log("[FlowBridge] Starting video generation task:", taskId, prompt);
+            console.log("[FlowBridge] generateVideo (Veo 3.1) task:", taskId, prompt);
             try {
-                // Click video tab if present
-                const videoTab = Array.from(document.querySelectorAll('button, div[role="tab"], a'))
-                    .find(el => el.textContent && el.textContent.trim().toLowerCase() === 'video');
-                if (videoTab) videoTab.click();
+                const options = optionsJson ? JSON.parse(optionsJson) : {};
+                const model = options.model || "veo-3.1";
+                const aspectRatio = options.aspectRatio || "16:9";
+
+                this.applyModelSettings(model, aspectRatio, 1);
 
                 setTimeout(() => {
-                    this.generateImage(taskId, prompt, optionsJson);
-                    this.watchForOutput(taskId, 'video', 300000); // 5 min timeout for video
-                }, 800);
+                    const inputEl = findElement(SELECTORS.promptInputs);
+                    if (inputEl) triggerInputEvents(inputEl, prompt);
+
+                    setTimeout(() => {
+                        const btn = findElement(SELECTORS.generateButtons);
+                        if (btn) btn.click();
+                        this.watchForOutput(taskId, 'video', 1, 360000); // 6 min timeout for Veo 3.1
+                    }, 500);
+                }, 600);
 
                 return true;
             } catch (err) {
@@ -209,9 +293,33 @@
             }
         },
 
-        watchForOutput: function(taskId, mediaType, timeoutMs) {
+        listProjects: function() {
+            const projectEls = Array.from(document.querySelectorAll('a[href*="/project/"], [data-testid="project-item"], button[aria-label*="project" i]'));
+            const projects = projectEls.map(p => ({
+                name: p.textContent.trim(),
+                url: p.href || "",
+                id: (p.href || "").split('/project/')[1] || ""
+            })).filter(p => p.name.length > 0);
+            return JSON.stringify(projects);
+        },
+
+        createProject: function(name) {
+            clickMatchingButton(["New Project", "Create Project", "+ Project"]);
+            setTimeout(() => {
+                const nameInput = document.querySelector('input[placeholder*="project name" i], input[type="text"]');
+                if (nameInput) {
+                    triggerInputEvents(nameInput, name);
+                    setTimeout(() => {
+                        clickMatchingButton(["Create", "Save", "Confirm"]);
+                    }, 300);
+                }
+            }, 500);
+        },
+
+        watchForOutput: function(taskId, mediaType, expectedCount, timeoutMs) {
             const startTime = Date.now();
             let completed = false;
+            expectedCount = expectedCount || 1;
 
             const observer = new MutationObserver((mutations, obs) => {
                 if (completed) return;
@@ -220,21 +328,27 @@
                     mediaType === 'video' ? 'video[src], a[download][href*=".mp4"]' : 'img[src*="googleusercontent"], a[download][href*=".png"], a[download][href*=".jpg"]'
                 ));
 
+                const validUrls = [];
                 for (const media of mediaElements) {
                     const src = media.src || media.href;
-                    if (src && !src.startsWith('data:image/svg') && !src.includes('avatar')) {
-                        completed = true;
-                        obs.disconnect();
-                        console.log("[FlowBridge] Generation completed! Found media:", src);
-                        if (window.AndroidBridge) {
-                            window.AndroidBridge.onGenerationCompleted(taskId, src, JSON.stringify({
-                                mediaType: mediaType,
-                                url: src,
-                                completedAt: Date.now()
-                            }));
-                        }
-                        return;
+                    if (src && !src.startsWith('data:image/svg') && !src.includes('avatar') && !validUrls.includes(src)) {
+                        validUrls.push(src);
                     }
+                }
+
+                if (validUrls.length >= expectedCount || (validUrls.length > 0 && Date.now() - startTime > 30000)) {
+                    completed = true;
+                    obs.disconnect();
+                    console.log("[FlowBridge] Found outputs:", validUrls);
+                    if (window.AndroidBridge) {
+                        window.AndroidBridge.onGenerationCompleted(taskId, validUrls[0], JSON.stringify({
+                            mediaType: mediaType,
+                            urls: validUrls,
+                            count: validUrls.length,
+                            completedAt: Date.now()
+                        }));
+                    }
+                    return;
                 }
 
                 if (Date.now() - startTime > timeoutMs) {
@@ -264,10 +378,9 @@
         }
     };
 
-    // Continuous auth & health heartbeat
     setInterval(() => {
         window.FlowAutomation.checkAuth();
     }, 5000);
 
-    console.log("[FlowBridge] Google Flow Automation Bridge Ready.");
+    console.log("[FlowBridge] Google Flow v2.0 Automation Bridge Ready.");
 })();

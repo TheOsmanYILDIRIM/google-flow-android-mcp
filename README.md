@@ -1,61 +1,44 @@
-# 🌊 Google Flow Android MCP Server & Automation App
+# 🌊 Google Flow Android MCP Server & Automation App (v2.0)
 
 [![Build & Release APK](https://github.com/TheOsmanYILDIRIM/google-flow-android-mcp/actions/workflows/build-apk.yml/badge.svg)](https://github.com/TheOsmanYILDIRIM/google-flow-android-mcp/actions/workflows/build-apk.yml)
 [![Kotlin](https://img.shields.io/badge/Kotlin-1.9.23-purple.svg)](https://kotlinlang.org)
 [![Android](https://img.shields.io/badge/Android-API%2026%2B-green.svg)](https://developer.android.com)
 [![Protocol](https://img.shields.io/badge/MCP-Model%20Context%20Protocol-blue.svg)](https://modelcontextprotocol.io)
 
-**Google Flow Android MCP**, Google Flow (Veo-2 ve Imagen) yapay zeka medya üretim platformunu Android üzerinde yerel bir **1x1 Görünmez Floating Overlay** ve **Gömülü Ktor MCP Sunucusu** ile çalıştıran, Termux / CLI ortamından otonom kontrol edilmesini sağlayan bir mobil otomasyon köprüsüdür.
+**Google Flow Android MCP v2.0**, Google Flow üzerindeki en güncel **Nano Banana 2** (Görsel) ve **Veo 3.1** (Video) modellerini Android üzerinde yerel bir **1x1 Görünmez Floating Overlay** ve **Gömülü Ktor MCP Sunucusu** ile çalıştıran mobil otomasyon köprüsüdür.
 
 ---
 
-## 🎯 Çözülen Problem ve Mimari
+## 🚀 Güncel Özellikler & Desteklenen Modeller (v2.0)
 
-Termux veya Linux ARM64 ortamlarında masaüstü Chrome/Puppeteer/CDP çalıştırmak; grafik sunucusu eksikliği, Google 2FA giriş sorunları ve Android'in arka plan süreçlerini öldürmesi sebebiyle oldukça zordur.
-
-Bu proje sorunu şu şekilde çözer:
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                       ANDROID TELEFON                       │
-│                                                             │
-│   ┌─────────────────────┐         ┌─────────────────────┐   │
-│   │   Termux / CLI      │         │   Flow Android App  │   │
-│   │                     │         │                     │   │
-│   │   • Antigravity /   │  HTTP   │  • Ktor MCP Server  │   │
-│   │     Claude Code     │  (SSE)  │    (127.0.0.1:8765) │   │
-│   │   • Batch Pipeline  │ ──────> │  • 1x1 Overlay View │   │
-│   │   • flow_cli.py     │ <────── │  • Yerel WebView &  │   │
-│   │                     │  JSON   │    Google Auth      │   │
-│   │   (64 Görsel Batch) │  RPC    │  • DOM Scraper      │   │
-│   └─────────────────────┘         └─────────────────────┘   │
-└─────────────────────────────────────────────────────────────┘
-```
-
-1. **Güvenli Google Oturumu:** Kullanıcı uygulama açıldığında yerel WebView üzerinden kendi Google hesabına (2FA, Passkey destekli) giriş yapar. Şifreler veya token'lar hiçbir yerde saklanmaz.
-2. **1x1 Görünmez Floating Overlay:** WebView, `TYPE_APPLICATION_OVERLAY` izni ile 1x1 piksellik şeffaf bir pencereye küçültülür ve `ForegroundService` ile Android tarafından uyutulması engellenir.
-3. **Gömülü MCP Sunucusu:** Android uygulaması içinde çalışan Ktor sunucusu `http://127.0.0.1:8765/sse` adresinden Model Context Protocol yayını yapar.
-4. **Otonom Batch Pipeline:** Termux üzerinden tek komutla klasördeki onlarca görsel (örn: 64 PNG) sırayla Flow'a yüklenip, prompt ile yeniden üretilerek adlandırılmış şekilde kaydedilir.
+* 🎨 **En Son Görsel Modelleri:** `Nano Banana 2` ve `Nano Banana`
+* 🎬 **En Son Video Modeli:** `Veo 3.1`
+* 📐 **Tüm En/Boy Oranları (Aspect Ratios):** `1:1`, `16:9`, `9:16`, `4:3`, `3:4`, `2:3`, `3:2`, `21:9`
+* 🔢 **Çoklu Çıktı Üretimi (Batch Outputs):** Tek prompt ile aynı anda `1x`, `2x`, `3x` veya `4x` varyasyon üretimi
+* 📁 **Proje Yönetimi & Kategorizasyon:** Proje listeleme, yeni proje alanı açma ve çıktıları organize etme
+* 🔒 **Güvenli Google Oturumu:** Cihazın yerel WebView'i ile doğrudan Google hesabı (2FA, Passkey).
+* 👻 **1x1 Görünmez Floating Overlay:** WebView, ekranda 1x1 şeffaf pencere olarak aktif kalarak işletim sisteminin JS/DOM süreçlerini dondurmasını engeller.
+* ⚡ **Gömülü Ktor MCP Server:** `http://127.0.0.1:8765/sse` üzerinden Antigravity ve Claude Code CLI entegrasyonu.
 
 ---
 
-## 🛠️ Desteklenen MCP Araçları (Tools)
+## 🛠️ MCP Araçları (Tools)
 
-| MCP Tool | Açıklama |
-|---|---|
-| `flow_status` | Google Flow oturum durumu, kredi ve bağlantı kontrolü |
-| `flow_generate_image` | Metin promptu ile Imagen modeli üzerinden görsel üretimi |
-| `flow_generate_image_with_references` | Referans görsel verilerek stil transferi / image-to-image üretimi |
-| `flow_generate_video` | Veo-2 modeli ile yapay zeka video üretimi |
-| `flow_discover_ui` | Sayfa DOM yapısını ve seçicileri inceleme |
+| MCP Tool | Parametreler | Açıklama |
+|---|---|---|
+| `flow_status` | - | Oturum, bakiye, aktif modeller ve oranları denetler |
+| `flow_generate_image` | `prompt`, `model`, `aspect_ratio`, `count`, `outputPath` | Nano Banana 2 ile belirtilen oranda ve çoklu sayıda (1-4x) görsel üretir |
+| `flow_generate_image_with_references` | `prompt`, `imagePath`, `model`, `aspect_ratio`, `count`, `outputPath` | Referans görsel verilerek stil transferi / image-to-image üretimi |
+| `flow_generate_video` | `prompt`, `model`, `aspect_ratio`, `outputPath` | Veo 3.1 modeli ile yapay zeka video üretimi |
+| `flow_list_projects` | - | Flow üzerindeki kullanıcı projelerini listeler |
+| `flow_create_project` | `name` | Yeni bir proje kategorisi oluşturur |
+| `flow_discover_ui` | - | Sayfa DOM yapısını ve seçicileri inceler |
 
 ---
 
-## ⚡ Kurulum ve Kullanım
+## ⚡ Termux CLI Kullanımı
 
-### 1. Antigravity / Claude Code MCP Yapılandırması
-`~/.gemini/antigravity-cli/mcp.json` veya ilgili istemci yapılandırmanıza ekleyin:
-
+### 1. Antigravity MCP Yapılandırması (`mcp.json`)
 ```json
 {
   "mcpServers": {
@@ -66,49 +49,53 @@ Bu proje sorunu şu şekilde çözer:
 }
 ```
 
-### 2. Termux CLI Kontrolü
-Uygulama arka planda çalışırken Termux üzerinden doğrudan kontrol edebilirsiniz:
+### 2. CLI Komutları
 
 ```bash
 # Durum kontrolü
 python3 cli/flow_cli.py status
 
-# Metinden görsel üretme
-python3 cli/flow_cli.py image --prompt "Cyberpunk warrior in neon rain, 8k" --output ./warrior.png
+# Nano Banana 2 ile 16:9 oranında ve 4 adet varyasyon üretme
+python3 cli/flow_cli.py image \
+  --prompt "Cyberpunk city alley in rain, neon reflections, 8k" \
+  --model nano-banana-2 \
+  --ratio 16:9 \
+  --count 4 \
+  --output ./city.png
 
-# Referans görselle üretme
-python3 cli/flow_cli.py ref-image --image ./sprite_01.png --prompt "Redesign in anime style" --output ./sprite_01_out.png
+# Veo 3.1 ile 9:16 (Reels/TikTok) formatında video üretme
+python3 cli/flow_cli.py video \
+  --prompt "Futuristic drone flying through clouds at sunset" \
+  --model veo-3.1 \
+  --ratio 9:16 \
+  --output ./drone.mp4
 
-# Video üretme (Veo)
-python3 cli/flow_cli.py video --prompt "Drone shot flying through futuristic Tokyo" --output ./tokyo.mp4
+# Projeleri listeleme
+python3 cli/flow_cli.py projects
 ```
 
 ---
 
-## 🔁 64 Görsel Toplu İşlem (Batch Pipeline)
+## 🔁 64 Görsel Toplu İşlem Pipeline'ı (Batch Runner)
 
-Klasördeki 64 PNG görselini otomatik olarak Flow'a verip işlemek için:
+Klasördeki 64 PNG dosyasını Nano Banana 2 modeliyle, istenen oranda (örn: 1:1 veya 16:9) sırayla işlemek için:
 
 ```bash
 python3 cli/process_batch.py \
   --input-dir ./my_sprites/ \
   --output-dir ./processed_sprites/ \
+  --model nano-banana-2 \
+  --ratio 1:1 \
+  --count 2 \
   --prompt "Pixel art style, high quality cyberpunk redesign" \
-  --pattern "{name}_cyberpunk{ext}"
+  --pattern "{name}_banana2{ext}"
 ```
 
 ---
 
-## 📦 APK İndirme & Derleme
-
-Uygulama her `git push` sonrasında GitHub Actions üzerinde otomatik olarak derlenir ve GitHub Releases altında `.apk` olarak yayınlanır.
+## 📦 APK İndirme
 
 * **Releases Sayfası:** [GitHub Releases](https://github.com/TheOsmanYILDIRIM/google-flow-android-mcp/releases)
-
-Yerel derlemek için:
-```bash
-./gradlew assembleRelease
-```
 
 ---
 

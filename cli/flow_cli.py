@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Google Flow MCP - Termux CLI Controller
-Directly communicates with the Flow Android App running at http://127.0.0.1:8765
+Google Flow MCP - Termux CLI Controller (v2.0)
+Supports Nano Banana 2, Veo 3.1, Aspect Ratios (1:1, 16:9, 9:16), Multi-Output (1x-4x), and Projects.
 """
 
 import sys
@@ -17,26 +17,51 @@ def check_status():
     try:
         res = requests.get(f"{BASE_URL}/api/status", timeout=5)
         data = res.json()
-        print("=== Google Flow MCP Status ===")
-        print(f"Status:      {data.get('status')}")
-        print(f"Auth State:  {'✓ Logged In (Ready)' if data.get('isLoggedIn') else '⚠️ Needs Login'}")
-        print(f"Current URL: {data.get('currentUrl')}")
-        print(f"Endpoint:    {BASE_URL}/sse")
+        print("=== Google Flow MCP Status (v2.0) ===")
+        print(f"Status:            {data.get('status')}")
+        print(f"Auth State:        {'✓ Logged In (Ready)' if data.get('isLoggedIn') else '⚠️ Needs Login'}")
+        print(f"Supported Models:  {', '.join(data.get('supportedModels', []))}")
+        print(f"Aspect Ratios:     {', '.join(data.get('supportedAspectRatios', []))}")
+        print(f"Max Batch Outputs: {data.get('maxOutputsCount', 4)}x")
+        print(f"Current URL:       {data.get('currentUrl')}")
+        print(f"Endpoint:          {BASE_URL}/sse")
     except Exception as e:
         print(f"❌ Error connecting to Flow Android App: {e}")
         print("Make sure Google Flow MCP app is running on your phone.")
 
-def generate_image(prompt: str, output_path: Optional[str] = None):
-    print(f"🎨 Generating image with prompt: '{prompt}'...")
+def list_projects():
     try:
-        payload = {"prompt": prompt}
+        res = requests.get(f"{BASE_URL}/api/projects", timeout=5)
+        projects = res.json()
+        print(f"=== Flow Projects ({len(projects)}) ===")
+        for p in projects:
+            print(f"• {p.get('name')} (ID: {p.get('id')})")
+    except Exception as e:
+        print(f"❌ Error listing projects: {e}")
+
+def create_project(name: str):
+    try:
+        res = requests.post(f"{BASE_URL}/api/projects", json={"name": name}, timeout=5)
+        print(f"✓ Project creation requested: {name}")
+    except Exception as e:
+        print(f"❌ Error creating project: {e}")
+
+def generate_image(prompt: str, model: str = "nano-banana-2", aspect_ratio: str = "1:1", count: int = 1, output_path: Optional[str] = None):
+    print(f"🎨 Generating image [{model}] ({aspect_ratio}, {count}x): '{prompt}'...")
+    try:
+        payload = {
+            "prompt": prompt,
+            "model": model,
+            "aspectRatio": aspect_ratio,
+            "count": count
+        }
         if output_path:
             payload["outputPath"] = os.path.abspath(output_path)
         
-        res = requests.post(f"{BASE_URL}/api/generate", json=payload, timeout=180)
+        res = requests.post(f"{BASE_URL}/api/generate", json=payload, timeout=200)
         data = res.json()
         if data.get("success"):
-            print(f"✓ Image generated successfully!")
+            print(f"✓ Image generated successfully with {data.get('model')} ({data.get('aspectRatio')})!")
             print(f"Media URL:  {data.get('mediaUrl')}")
             print(f"Saved to:   {data.get('localPath')}")
         else:
@@ -44,22 +69,25 @@ def generate_image(prompt: str, output_path: Optional[str] = None):
     except Exception as e:
         print(f"❌ Request error: {e}")
 
-def generate_with_reference(prompt: str, image_path: str, output_path: Optional[str] = None):
+def generate_with_reference(prompt: str, image_path: str, model: str = "nano-banana-2", aspect_ratio: str = "1:1", count: int = 1, output_path: Optional[str] = None):
     abs_image = os.path.abspath(image_path)
     if not os.path.exists(abs_image):
         print(f"❌ Reference image not found: {abs_image}")
         return
 
-    print(f"🖼️ Generating with reference '{abs_image}' and prompt: '{prompt}'...")
+    print(f"🖼️ Generating with reference '{abs_image}' [{model}] ({aspect_ratio}, {count}x): '{prompt}'...")
     try:
         payload = {
             "prompt": prompt,
-            "imagePath": abs_image
+            "imagePath": abs_image,
+            "model": model,
+            "aspectRatio": aspect_ratio,
+            "count": count
         }
         if output_path:
             payload["outputPath"] = os.path.abspath(output_path)
 
-        res = requests.post(f"{BASE_URL}/api/generate-with-reference", json=payload, timeout=200)
+        res = requests.post(f"{BASE_URL}/api/generate-with-reference", json=payload, timeout=220)
         data = res.json()
         if data.get("success"):
             print(f"✓ Output generated successfully!")
@@ -70,17 +98,21 @@ def generate_with_reference(prompt: str, image_path: str, output_path: Optional[
     except Exception as e:
         print(f"❌ Request error: {e}")
 
-def generate_video(prompt: str, output_path: Optional[str] = None):
-    print(f"🎬 Generating video (Veo) with prompt: '{prompt}'...")
+def generate_video(prompt: str, model: str = "veo-3.1", aspect_ratio: str = "16:9", output_path: Optional[str] = None):
+    print(f"🎬 Generating video [{model}] ({aspect_ratio}): '{prompt}'...")
     try:
-        payload = {"prompt": prompt}
+        payload = {
+            "prompt": prompt,
+            "model": model,
+            "aspectRatio": aspect_ratio
+        }
         if output_path:
             payload["outputPath"] = os.path.abspath(output_path)
 
-        res = requests.post(f"{BASE_URL}/api/video", json=payload, timeout=360)
+        res = requests.post(f"{BASE_URL}/api/video", json=payload, timeout=380)
         data = res.json()
         if data.get("success"):
-            print(f"✓ Video generated successfully!")
+            print(f"✓ Video generated successfully with {model}!")
             print(f"Media URL:  {data.get('mediaUrl')}")
             print(f"Saved to:   {data.get('localPath')}")
         else:
@@ -89,38 +121,55 @@ def generate_video(prompt: str, output_path: Optional[str] = None):
         print(f"❌ Request error: {e}")
 
 def main():
-    parser = argparse.ArgumentParser(description="Google Flow Android MCP CLI Controller")
+    parser = argparse.ArgumentParser(description="Google Flow Android MCP CLI Controller (v2.0)")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     # status
     subparsers.add_parser("status", help="Check Flow MCP app and login status")
 
+    # projects
+    subparsers.add_parser("projects", help="List user projects in Flow")
+    proj_create = subparsers.add_parser("create-project", help="Create a new project workspace")
+    proj_create.add_argument("--name", "-n", required=True, help="Project name")
+
     # image
-    img_parser = subparsers.add_parser("image", help="Generate AI Image from prompt")
+    img_parser = subparsers.add_parser("image", help="Generate AI Image with Nano Banana 2")
     img_parser.add_argument("--prompt", "-p", required=True, help="Text prompt")
+    img_parser.add_argument("--model", "-m", default="nano-banana-2", choices=["nano-banana-2", "nano-banana"], help="Image model")
+    img_parser.add_argument("--ratio", "-r", default="1:1", choices=["1:1", "16:9", "9:16", "4:3", "3:4", "2:3", "3:2"], help="Aspect ratio")
+    img_parser.add_argument("--count", "-c", type=int, default=1, choices=[1, 2, 3, 4], help="Outputs count")
     img_parser.add_argument("--output", "-o", help="Destination file path")
 
     # ref-image
     ref_parser = subparsers.add_parser("ref-image", help="Generate AI Image with reference image")
     ref_parser.add_argument("--image", "-i", required=True, help="Path to reference image")
     ref_parser.add_argument("--prompt", "-p", required=True, help="Text prompt")
+    ref_parser.add_argument("--model", "-m", default="nano-banana-2", choices=["nano-banana-2", "nano-banana"], help="Image model")
+    ref_parser.add_argument("--ratio", "-r", default="1:1", choices=["1:1", "16:9", "9:16", "4:3", "3:4"], help="Aspect ratio")
+    ref_parser.add_argument("--count", "-c", type=int, default=1, choices=[1, 2, 3, 4], help="Outputs count")
     ref_parser.add_argument("--output", "-o", help="Destination file path")
 
     # video
-    vid_parser = subparsers.add_parser("video", help="Generate AI Video from prompt (Veo)")
+    vid_parser = subparsers.add_parser("video", help="Generate AI Video (Veo 3.1)")
     vid_parser.add_argument("--prompt", "-p", required=True, help="Text prompt")
+    vid_parser.add_argument("--model", "-m", default="veo-3.1", choices=["veo-3.1"], help="Video model")
+    vid_parser.add_argument("--ratio", "-r", default="16:9", choices=["16:9", "9:16"], help="Aspect ratio")
     vid_parser.add_argument("--output", "-o", help="Destination MP4 file path")
 
     args = parser.parse_args()
 
     if args.command == "status":
         check_status()
+    elif args.command == "projects":
+        list_projects()
+    elif args.command == "create-project":
+        create_project(args.name)
     elif args.command == "image":
-        generate_image(args.prompt, args.output)
+        generate_image(args.prompt, args.model, args.ratio, args.count, args.output)
     elif args.command == "ref-image":
-        generate_with_reference(args.prompt, args.image, args.output)
+        generate_with_reference(args.prompt, args.image, args.model, args.ratio, args.count, args.output)
     elif args.command == "video":
-        generate_video(args.prompt, args.output)
+        generate_video(args.prompt, args.model, args.ratio, args.output)
 
 if __name__ == "__main__":
     main()
