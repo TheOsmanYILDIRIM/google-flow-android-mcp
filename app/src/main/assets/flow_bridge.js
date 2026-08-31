@@ -1,166 +1,150 @@
 /**
- * Google Flow & FX Suite Automation Bridge & Scraper (v2.5)
- * Built with EXACT verified DOM architecture from live Google Flow Studio.
+ * Google Flow & FX Suite Automation Bridge & Scraper (v2.6)
+ * Complete Lexical/Slate/React Contenteditable Engine & Multi-Event Dispatcher.
  */
 
 (function() {
     if (window.FlowBridgeInitialized) return;
     window.FlowBridgeInitialized = true;
 
-    console.log("[FlowBridge] Initializing Google Flow Bridge v2.5 (Verified Selectors)...");
+    console.log("[FlowBridge] Initializing Google Flow Bridge v2.6 (Rich Text & Full Event Trigger)...");
 
-    const SELECTORS = {
-        promptDivs: [
-            'div[contenteditable="true"]',
-            'div[role="textbox"]',
-            'textarea[placeholder*="Ne oluşturmak" i]',
-            'textarea[placeholder*="want to create" i]',
-            'textarea'
-        ],
-        generateButtons: [
-            'button:contains("Oluştur")',
-            'button:contains("arrow_forward")',
-            'button:contains("Generate")',
-            'button:contains("Create")',
-            'button[aria-label*="Oluştur" i]',
-            'button[aria-label*="Generate" i]',
-            'button[aria-label*="Create" i]'
-        ],
-        modelSettingsButton: [
-            'button:contains("Nano Banana")',
-            'button:contains("Veo")',
-            'button:contains("🍌")',
-            'button:contains("crop_square")'
-        ],
-        mediaOutputs: [
-            'img[src*="media.getMediaUrlRedirect"]',
-            'video[src*="media.getMediaUrlRedirect"]',
-            'img[alt*="Üretilmiş resim" i]',
-            'img[alt*="Generated image" i]',
-            'a[download]'
-        ]
-    };
+    function simulateUserTyping(element, text) {
+        element.focus();
 
-    function findElement(selectors) {
-        for (const selector of selectors) {
-            try {
-                if (selector.includes(':contains(')) {
-                    const text = selector.match(/:contains\("([^"]+)"\)/)[1];
-                    const elements = Array.from(document.querySelectorAll('button, span, div, a, p'));
-                    const found = elements.find(el => el.textContent && el.textContent.includes(text));
-                    if (found) return found;
-                } else {
-                    const el = document.querySelector(selector);
-                    if (el) return el;
-                }
-            } catch (e) {}
-        }
-        return null;
-    }
+        // 1. Mouse/Pointer focus sequence
+        ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(evt => {
+            element.dispatchEvent(new MouseEvent(evt, { bubbles: true, cancelable: true, view: window }));
+        });
 
-    function setPromptText(text) {
-        // 1. Look for contenteditable DIV
-        let promptEl = Array.from(document.querySelectorAll('div[contenteditable="true"]')).find(d => 
-            d.isContentEditable || (d.textContent && (d.textContent.includes('Ne oluşturmak') || d.textContent.includes('want to create')))
-        ) || document.querySelector('div[contenteditable="true"]');
-
-        if (!promptEl) {
-            promptEl = document.querySelector('textarea, input[type="text"]');
-        }
-
-        if (!promptEl) return false;
-
-        promptEl.focus();
-
-        if (promptEl.isContentEditable || promptEl.getAttribute('contenteditable') === 'true') {
-            // Select all contents and replace with text
+        // 2. Clear content
+        if (element.isContentEditable || element.getAttribute('contenteditable') === 'true') {
             const selection = window.getSelection();
             const range = document.createRange();
-            range.selectNodeContents(promptEl);
+            range.selectNodeContents(element);
             selection.removeAllRanges();
             selection.addRange(range);
-
             document.execCommand('delete', false, null);
+
+            // 3. Dispatch beforeinput (Lexical / Slate / React 18+ requirement)
+            try {
+                const beforeInput = new InputEvent('beforeinput', {
+                    bubbles: true,
+                    cancelable: true,
+                    inputType: 'insertText',
+                    data: text
+                });
+                element.dispatchEvent(beforeInput);
+            } catch (e) {}
+
+            // 4. ExecCommand insertText
             document.execCommand('insertText', false, text);
 
-            if (!promptEl.textContent.includes(text)) {
-                promptEl.textContent = text;
+            if (!element.textContent || !element.textContent.includes(text)) {
+                element.textContent = text;
             }
 
-            promptEl.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
-            promptEl.dispatchEvent(new InputEvent('input', {
-                bubbles: true,
-                cancelable: true,
-                inputType: 'insertText',
-                data: text
-            }));
-            promptEl.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
+            // 5. Input and change events
+            try {
+                const inputEvent = new InputEvent('input', {
+                    bubbles: true,
+                    cancelable: true,
+                    inputType: 'insertText',
+                    data: text
+                });
+                element.dispatchEvent(inputEvent);
+            } catch (e) {
+                element.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+            element.dispatchEvent(new Event('change', { bubbles: true }));
+
+            // 6. Character-level keystrokes to ensure validation triggers
+            element.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', code: 'KeyA', keyCode: 65, which: 65, bubbles: true }));
+            element.dispatchEvent(new KeyboardEvent('keypress', { key: 'a', code: 'KeyA', keyCode: 65, which: 65, bubbles: true }));
+            element.dispatchEvent(new KeyboardEvent('keyup', { key: 'a', code: 'KeyA', keyCode: 65, which: 65, bubbles: true }));
+            
+            // Backspace the dummy key if needed
+            element.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', code: 'Backspace', keyCode: 8, which: 8, bubbles: true }));
+            element.dispatchEvent(new KeyboardEvent('keyup', { key: 'Backspace', code: 'Backspace', keyCode: 8, which: 8, bubbles: true }));
         } else {
-            const proto = promptEl.tagName.toLowerCase() === 'textarea'
+            const proto = element.tagName.toLowerCase() === 'textarea'
                 ? window.HTMLTextAreaElement.prototype
                 : window.HTMLInputElement.prototype;
             const nativeSetter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
-            if (nativeSetter) nativeSetter.call(promptEl, text);
-            else promptEl.value = text;
+            if (nativeSetter) nativeSetter.call(element, text);
+            else element.value = text;
 
-            promptEl.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
-            promptEl.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
+            element.dispatchEvent(new Event('input', { bubbles: true }));
+            element.dispatchEvent(new Event('change', { bubbles: true }));
         }
+    }
 
-        // Dispatch keyboard events
-        promptEl.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', bubbles: true }));
-        promptEl.dispatchEvent(new KeyboardEvent('keyup', { key: 'a', bubbles: true }));
+    function forceTriggerClick(button) {
+        if (!button) return false;
+        
+        // Remove disabled flags
+        button.removeAttribute('disabled');
+        button.disabled = false;
+        button.setAttribute('aria-disabled', 'false');
+
+        // Full mouse/touch event chain
+        ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(evt => {
+            button.dispatchEvent(new MouseEvent(evt, {
+                bubbles: true,
+                cancelable: true,
+                view: window,
+                buttons: 1
+            }));
+        });
+
+        // Also call native .click()
+        try {
+            button.click();
+        } catch (e) {}
 
         return true;
     }
 
-    function clickGenerateButton() {
+    function triggerGenerateAction() {
         const buttons = Array.from(document.querySelectorAll('button'));
         
-        // Exact match for "arrow_forwardOluştur" or "Oluştur" / "Generate"
-        let genBtn = buttons.find(b => {
+        // Match button containing "arrow_forward" or "Oluştur" or "Generate" or "Create"
+        const candidates = buttons.filter(b => {
             const txt = (b.textContent || '').trim();
-            return (txt.includes('Oluştur') && txt.includes('arrow_forward')) || 
-                   txt === 'arrow_forwardOluştur' || 
-                   txt.includes('Generate') || 
-                   txt.includes('Create');
+            const cls = (b.className || '');
+            return txt.includes('arrow_forward') || txt.includes('Oluştur') || txt.includes('Generate') || txt.includes('Create') || cls.includes('kmC') || cls.includes('joS');
         });
 
-        if (!genBtn) {
-            genBtn = buttons.find(b => {
-                const txt = (b.textContent || '').trim();
-                return txt.includes('Oluştur') || txt.includes('arrow_forward');
-            });
+        console.log("[FlowBridge] Found candidate generate buttons:", candidates.length);
+
+        for (const btn of candidates) {
+            console.log("[FlowBridge] Triggering candidate button:", btn.textContent);
+            forceTriggerClick(btn);
         }
 
-        if (genBtn) {
-            genBtn.removeAttribute('disabled');
-            genBtn.disabled = false;
-            genBtn.click();
-            if (window.AndroidBridge) {
-                window.AndroidBridge.log("✓ Generate button clicked: " + genBtn.textContent.trim());
-            }
-            return true;
-        }
-
-        // Fallback: Dispatched Ctrl+Enter
+        // Also trigger Enter key on prompt input
         const promptEl = document.querySelector('div[contenteditable="true"], textarea');
         if (promptEl) {
-            promptEl.dispatchEvent(new KeyboardEvent('keydown', {
-                key: 'Enter',
-                code: 'Enter',
-                keyCode: 13,
-                which: 13,
-                ctrlKey: true,
-                bubbles: true
-            }));
-            if (window.AndroidBridge) {
-                window.AndroidBridge.log("Dispatched Ctrl+Enter fallback.");
-            }
-            return true;
+            ['keydown', 'keypress', 'keyup'].forEach(evt => {
+                promptEl.dispatchEvent(new KeyboardEvent(evt, {
+                    key: 'Enter',
+                    code: 'Enter',
+                    keyCode: 13,
+                    which: 13,
+                    ctrlKey: true,
+                    bubbles: true,
+                    cancelable: true
+                }));
+                promptEl.dispatchEvent(new KeyboardEvent(evt, {
+                    key: 'Enter',
+                    code: 'Enter',
+                    keyCode: 13,
+                    which: 13,
+                    bubbles: true,
+                    cancelable: true
+                }));
+            });
         }
-
-        return false;
     }
 
     function applyModelSettings(model, aspectRatio, count) {
@@ -170,29 +154,25 @@
         });
 
         if (settingsBtn) {
-            settingsBtn.click();
+            forceTriggerClick(settingsBtn);
             setTimeout(() => {
                 const options = Array.from(document.querySelectorAll('button, div[role="menuitem"], div[role="radio"], span'));
                 
-                // Model selection
                 if (model) {
                     const mOption = options.find(o => o.textContent && o.textContent.toLowerCase().includes(model.toLowerCase()));
-                    if (mOption) mOption.click();
+                    if (mOption) forceTriggerClick(mOption);
                 }
 
-                // Ratio selection
                 if (aspectRatio) {
                     const rOption = options.find(o => o.textContent && o.textContent.includes(aspectRatio));
-                    if (rOption) rOption.click();
+                    if (rOption) forceTriggerClick(rOption);
                 }
 
-                // Count selection
                 if (count && count > 1) {
                     const cOption = options.find(o => o.textContent && o.textContent.includes(`x${count}`));
-                    if (cOption) cOption.click();
+                    if (cOption) forceTriggerClick(cOption);
                 }
 
-                // Close settings popup by clicking outside or pressing Escape
                 document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }));
             }, 300);
         }
@@ -283,19 +263,26 @@
 
                 applyModelSettings(model, aspectRatio, count);
 
-                const success = setPromptText(prompt);
-                if (!success) {
+                const promptDiv = Array.from(document.querySelectorAll('div[contenteditable="true"]')).find(d => 
+                    d.isContentEditable || (d.textContent && (d.textContent.includes('Ne oluşturmak') || d.textContent.includes('want to create')))
+                ) || document.querySelector('div[contenteditable="true"], textarea');
+
+                if (!promptDiv) {
                     if (window.AndroidBridge) {
                         window.AndroidBridge.onError(taskId, "Could not find prompt contenteditable box on page: " + window.location.href);
                     }
                     return false;
                 }
 
-                // Give React 350ms to activate button state
+                simulateUserTyping(promptDiv, prompt);
+
+                // Multiple timed trigger attempts to ensure React state commits
+                setTimeout(() => { triggerGenerateAction(); }, 300);
+                setTimeout(() => { triggerGenerateAction(); }, 700);
                 setTimeout(() => {
-                    clickGenerateButton();
+                    triggerGenerateAction();
                     this.watchForOutput(taskId, 'image', count, 200000);
-                }, 350);
+                }, 1200);
 
                 return true;
             } catch (err) {
@@ -316,18 +303,19 @@
 
                 applyModelSettings(model, aspectRatio, 1);
 
-                const success = setPromptText(prompt);
-                if (!success) {
-                    if (window.AndroidBridge) {
-                        window.AndroidBridge.onError(taskId, "Could not find prompt input");
-                    }
+                const promptDiv = document.querySelector('div[contenteditable="true"], textarea');
+                if (!promptDiv) {
+                    if (window.AndroidBridge) window.AndroidBridge.onError(taskId, "Could not find prompt input");
                     return false;
                 }
 
+                simulateUserTyping(promptDiv, prompt);
+
+                setTimeout(() => { triggerGenerateAction(); }, 300);
                 setTimeout(() => {
-                    clickGenerateButton();
+                    triggerGenerateAction();
                     this.watchForOutput(taskId, 'video', 1, 400000);
-                }, 350);
+                }, 800);
 
                 return true;
             } catch (err) {
@@ -341,7 +329,6 @@
             let completed = false;
             expectedCount = expectedCount || 1;
 
-            // Collect existing media to only detect new output
             const existingMedia = Array.from(document.querySelectorAll('img[src*="media.getMediaUrlRedirect"], video[src*="media.getMediaUrlRedirect"]'))
                 .map(m => m.src);
 
@@ -357,16 +344,6 @@
                     const src = media.src || media.href;
                     if (src && !existingMedia.includes(src) && !src.startsWith('data:image/svg') && !src.includes('avatar') && !validUrls.includes(src)) {
                         validUrls.push(src);
-                    }
-                }
-
-                // If no new ones found yet, check if any media redirected
-                if (validUrls.length === 0 && mediaElements.length > 0 && Date.now() - startTime > 15000) {
-                    for (const media of mediaElements) {
-                        const src = media.src || media.href;
-                        if (src && (src.includes('media.getMediaUrlRedirect') || src.includes('googleusercontent')) && !validUrls.includes(src)) {
-                            validUrls.push(src);
-                        }
                     }
                 }
 
@@ -401,5 +378,5 @@
         window.FlowAutomation.checkAuth();
     }, 5000);
 
-    console.log("[FlowBridge] Google Flow Bridge v2.5 Ready.");
+    console.log("[FlowBridge] Google Flow Bridge v2.6 Ready.");
 })();
