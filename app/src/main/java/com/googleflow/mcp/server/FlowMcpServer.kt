@@ -31,7 +31,7 @@ class FlowMcpServer(
             routing {
                 get("/") {
                     call.respondText(
-                        "Google Flow Android MCP Server v3.2 (Full Python Crawler & API Control Active)",
+                        "Google Flow Android MCP Server v3.3 (Full Python Crawler & API Control Active)",
                         ContentType.Text.Plain
                     )
                 }
@@ -56,13 +56,14 @@ class FlowMcpServer(
                         .filter { it.isNotBlank() }
                         .joinToString("; ")
 
-                    call.respond(HttpStatusCode.OK, mapOf(
+                    val res = mapOf(
                         "success" to true,
                         "cookieHeader" to combined,
                         "labsCookies" to labsCookies,
                         "googleCookies" to googleCookies,
                         "accountsCookies" to accountsCookies
-                    ))
+                    )
+                    call.respondText(gson.toJson(res), ContentType.Application.Json)
                 }
 
                 // Inject cookies into Android App WebView
@@ -72,9 +73,11 @@ class FlowMcpServer(
                     val cookies = json.get("cookies")?.asString
                     if (!cookies.isNullOrBlank()) {
                         engine.importCookies(cookies)
-                        call.respond(HttpStatusCode.OK, mapOf("success" to true, "message" to "Cookies imported"))
+                        val res = mapOf("success" to true, "message" to "Cookies imported")
+                        call.respondText(gson.toJson(res), ContentType.Application.Json)
                     } else {
-                        call.respond(HttpStatusCode.BadRequest, mapOf("error" to "No cookies provided"))
+                        val res = mapOf("error" to "No cookies provided")
+                        call.respondText(gson.toJson(res), ContentType.Application.Json, HttpStatusCode.BadRequest)
                     }
                 }
 
@@ -124,9 +127,11 @@ class FlowMcpServer(
                         engine.webView?.post {
                             engine.webView?.loadUrl(url)
                         }
-                        call.respond(HttpStatusCode.OK, mapOf("success" to true, "navigatedTo" to url))
+                        val res = mapOf("success" to true, "navigatedTo" to url)
+                        call.respondText(gson.toJson(res), ContentType.Application.Json)
                     } else {
-                        call.respond(HttpStatusCode.BadRequest, mapOf("error" to "URL is required"))
+                        val res = mapOf("error" to "URL is required")
+                        call.respondText(gson.toJson(res), ContentType.Application.Json, HttpStatusCode.BadRequest)
                     }
                 }
 
@@ -153,7 +158,8 @@ class FlowMcpServer(
                     val json = gson.fromJson(body, JsonObject::class.java)
                     val name = json.get("name")?.asString ?: "New Project"
                     engine.createProject(name)
-                    call.respond(HttpStatusCode.OK, mapOf("status" to "created", "name" to name))
+                    val res = mapOf("status" to "created", "name" to name)
+                    call.respondText(gson.toJson(res), ContentType.Application.Json)
                 }
 
                 post("/api/generate") {
@@ -166,7 +172,8 @@ class FlowMcpServer(
                     val outputPath = json.get("outputPath")?.asString
 
                     if (prompt.isBlank()) {
-                        call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Prompt is required"))
+                        val res = mapOf("error" to "Prompt is required")
+                        call.respondText(gson.toJson(res), ContentType.Application.Json, HttpStatusCode.BadRequest)
                         return@post
                     }
 
@@ -183,33 +190,27 @@ class FlowMcpServer(
                         val mediaUrl = genResult.mediaUrl
                         try {
                             val localFile = engine.downloadMedia(mediaUrl, outputPath)
-                            call.respond(
-                                HttpStatusCode.OK,
-                                mapOf(
-                                    "success" to true,
-                                    "taskId" to taskId,
-                                    "mediaUrl" to mediaUrl,
-                                    "localPath" to localFile.absolutePath,
-                                    "model" to model,
-                                    "aspectRatio" to aspectRatio
-                                )
+                            val res = mapOf(
+                                "success" to true,
+                                "taskId" to taskId,
+                                "mediaUrl" to mediaUrl,
+                                "localPath" to localFile.absolutePath,
+                                "model" to model,
+                                "aspectRatio" to aspectRatio
                             )
+                            call.respondText(gson.toJson(res), ContentType.Application.Json)
                         } catch (e: Exception) {
-                            call.respond(
-                                HttpStatusCode.OK,
-                                mapOf(
-                                    "success" to true,
-                                    "taskId" to taskId,
-                                    "mediaUrl" to mediaUrl,
-                                    "downloadError" to e.message
-                                )
+                            val res = mapOf(
+                                "success" to true,
+                                "taskId" to taskId,
+                                "mediaUrl" to mediaUrl,
+                                "downloadError" to e.message
                             )
+                            call.respondText(gson.toJson(res), ContentType.Application.Json)
                         }
                     } else {
-                        call.respond(
-                            HttpStatusCode.InternalServerError,
-                            mapOf("error" to (genResult?.errorMessage ?: "Generation timed out or failed on device"))
-                        )
+                        val res = mapOf("error" to (genResult?.errorMessage ?: "Generation timed out or failed on device"))
+                        call.respondText(gson.toJson(res), ContentType.Application.Json, HttpStatusCode.InternalServerError)
                     }
                 }
 
@@ -225,7 +226,8 @@ class FlowMcpServer(
 
                     val refFile = File(imagePath)
                     if (!refFile.exists()) {
-                        call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Reference image not found: $imagePath"))
+                        val res = mapOf("error" to "Reference image not found: $imagePath")
+                        call.respondText(gson.toJson(res), ContentType.Application.Json, HttpStatusCode.BadRequest)
                         return@post
                     }
 
@@ -245,33 +247,27 @@ class FlowMcpServer(
                         val mediaUrl = genResult.mediaUrl
                         try {
                             val localFile = engine.downloadMedia(mediaUrl, outputPath)
-                            call.respond(
-                                HttpStatusCode.OK,
-                                mapOf(
-                                    "success" to true,
-                                    "taskId" to taskId,
-                                    "mediaUrl" to mediaUrl,
-                                    "localPath" to localFile.absolutePath,
-                                    "model" to model,
-                                    "aspectRatio" to aspectRatio
-                                )
+                            val res = mapOf(
+                                "success" to true,
+                                "taskId" to taskId,
+                                "mediaUrl" to mediaUrl,
+                                "localPath" to localFile.absolutePath,
+                                "model" to model,
+                                "aspectRatio" to aspectRatio
                             )
+                            call.respondText(gson.toJson(res), ContentType.Application.Json)
                         } catch (e: Exception) {
-                            call.respond(
-                                HttpStatusCode.OK,
-                                mapOf(
-                                    "success" to true,
-                                    "taskId" to taskId,
-                                    "mediaUrl" to mediaUrl,
-                                    "downloadError" to e.message
-                                )
+                            val res = mapOf(
+                                "success" to true,
+                                "taskId" to taskId,
+                                "mediaUrl" to mediaUrl,
+                                "downloadError" to e.message
                             )
+                            call.respondText(gson.toJson(res), ContentType.Application.Json)
                         }
                     } else {
-                        call.respond(
-                            HttpStatusCode.InternalServerError,
-                            mapOf("error" to (genResult?.errorMessage ?: "Reference image generation failed or timed out"))
-                        )
+                        val res = mapOf("error" to (genResult?.errorMessage ?: "Reference image generation failed or timed out"))
+                        call.respondText(gson.toJson(res), ContentType.Application.Json, HttpStatusCode.InternalServerError)
                     }
                 }
 
@@ -296,33 +292,27 @@ class FlowMcpServer(
                         val mediaUrl = genResult.mediaUrl
                         try {
                             val localFile = engine.downloadMedia(mediaUrl, outputPath)
-                            call.respond(
-                                HttpStatusCode.OK,
-                                mapOf(
-                                    "success" to true,
-                                    "taskId" to taskId,
-                                    "mediaUrl" to mediaUrl,
-                                    "localPath" to localFile.absolutePath,
-                                    "model" to model,
-                                    "aspectRatio" to aspectRatio
-                                )
+                            val res = mapOf(
+                                "success" to true,
+                                "taskId" to taskId,
+                                "mediaUrl" to mediaUrl,
+                                "localPath" to localFile.absolutePath,
+                                "model" to model,
+                                "aspectRatio" to aspectRatio
                             )
+                            call.respondText(gson.toJson(res), ContentType.Application.Json)
                         } catch (e: Exception) {
-                            call.respond(
-                                HttpStatusCode.OK,
-                                mapOf(
-                                    "success" to true,
-                                    "taskId" to taskId,
-                                    "mediaUrl" to mediaUrl,
-                                    "downloadError" to e.message
-                                )
+                            val res = mapOf(
+                                "success" to true,
+                                "taskId" to taskId,
+                                "mediaUrl" to mediaUrl,
+                                "downloadError" to e.message
                             )
+                            call.respondText(gson.toJson(res), ContentType.Application.Json)
                         }
                     } else {
-                        call.respond(
-                            HttpStatusCode.InternalServerError,
-                            mapOf("error" to (genResult?.errorMessage ?: "Video generation timed out or failed"))
-                        )
+                        val res = mapOf("error" to (genResult?.errorMessage ?: "Video generation timed out or failed"))
+                        call.respondText(gson.toJson(res), ContentType.Application.Json, HttpStatusCode.InternalServerError)
                     }
                 }
 
@@ -344,7 +334,7 @@ class FlowMcpServer(
                                     })
                                     add("serverInfo", JsonObject().apply {
                                         addProperty("name", "google-flow-android-mcp")
-                                        addProperty("version", "3.2.0")
+                                        addProperty("version", "3.3.0")
                                     })
                                 })
                             }
