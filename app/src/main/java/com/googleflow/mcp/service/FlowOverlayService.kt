@@ -10,6 +10,7 @@ import android.graphics.PixelFormat
 import android.os.Binder
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
 import android.provider.Settings
 import android.view.Gravity
 import android.view.View
@@ -28,6 +29,7 @@ class FlowOverlayService : Service() {
     private val binder = LocalBinder()
     private var windowManager: WindowManager? = null
     private var overlayView: View? = null
+    private var wakeLock: PowerManager.WakeLock? = null
     
     lateinit var engine: FlowScraperEngine
         private set
@@ -45,10 +47,18 @@ class FlowOverlayService : Service() {
     override fun onCreate() {
         super.onCreate()
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        
+        // Acquire CPU WakeLock so Android never throttles background CPU
+        val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+        wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "GoogleFlowMCP::ServiceWakeLock").apply {
+            setReferenceCounted(false)
+            acquire(60 * 60 * 1000L) // 1 hour max safety
+        }
+
         engine = FlowScraperEngine(this)
         server = FlowMcpServer(engine)
         
-        startForeground(1001, createNotification("Service Initialized"))
+        startForeground(1001, createNotification("MCP Background Engine Active"))
         server.start()
     }
 
@@ -76,6 +86,11 @@ class FlowOverlayService : Service() {
             .build()
     }
 
+    /**
+     * Transparent Full-Screen Pass-Through Window
+     * Makes Chromium see a full 1080x1920 active layout so JS never freezes,
+     * while touch events pass 100% through to apps below!
+     */
     @SuppressLint("InflateParams")
     fun attachTo1x1Overlay() {
         if (isOverlayAttached) return
@@ -97,26 +112,29 @@ class FlowOverlayService : Service() {
         }
 
         val params = WindowManager.LayoutParams(
-            1, // 1 pixel width
-            1, // 1 pixel height
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.MATCH_PARENT,
             layoutType,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                    WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
-                    WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
+                    WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
             x = 0
             y = 0
+            alpha = 0.01f // Invisible to eye, touch passes through, but active to Chromium!
         }
 
         try {
             windowManager?.addView(webView, params)
             overlayView = webView
             isOverlayAttached = true
-            engine.bridge.log("Attached to 1x1 background overlay successfully.")
+            webView.onResume()
+            webView.resumeTimers()
+            engine.bridge.log("Attached to transparent pass-through background window. Chromium running at full speed!")
         } catch (e: Exception) {
-            engine.bridge.log("Failed to attach 1x1 overlay: ${e.message}")
+            engine.bridge.log("Failed to attach background overlay: ${e.message}")
         }
     }
 
@@ -125,7 +143,7 @@ class FlowOverlayService : Service() {
         try {
             windowManager?.removeView(overlayView)
             isOverlayAttached = false
-            engine.bridge.log("Detached from 1x1 overlay for full UI interaction.")
+            engine.bridge.log("Detached from background overlay for full UI interaction.")
         } catch (e: Exception) {
             engine.bridge.log("Error detaching overlay: ${e.message}")
         }
@@ -135,6 +153,9 @@ class FlowOverlayService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         server.stop()
+        wakeLock?.let {
+            if (it.isHeld) it.release()
+        }
         if (isOverlayAttached && overlayView != null) {
             try {
                 windowManager?.removeView(overlayView)
