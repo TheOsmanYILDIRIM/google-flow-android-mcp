@@ -1,52 +1,126 @@
 package com.googleflow.mcp.server
 
-import android.util.Base64
+import android.os.Handler
+import android.os.Looper
 import android.webkit.CookieManager
 import com.googleflow.mcp.engine.FlowScraperEngine
 import com.google.gson.Gson
 import com.google.gson.JsonObject
-import io.ktor.http.*
-import io.ktor.server.application.*
-import io.ktor.server.cio.*
-import io.ktor.server.engine.*
-import io.ktor.server.request.*
-import io.ktor.server.response.*
-import io.ktor.server.routing.*
 import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
+import java.io.BufferedReader
 import java.io.File
+import java.io.InputStreamReader
+import java.io.OutputStream
+import java.net.InetSocketAddress
+import java.net.ServerSocket
+import java.net.Socket
+import java.util.concurrent.Executors
 
+/**
+ * High-Performance Native Java POSIX Thread HTTP Server
+ * Uses raw sockets and dedicated OS threads so it NEVER freezes in background.
+ */
 class FlowMcpServer(
     private val engine: FlowScraperEngine,
     private val port: Int = 8765
 ) {
-    private var server: ApplicationEngine? = null
+    private var serverSocket: ServerSocket? = null
+    private var isRunning = false
+    private val threadPool = Executors.newCachedThreadPool()
+    private val mainHandler = Handler(Looper.getMainLooper())
     private val gson = Gson()
 
     fun start() {
-        if (server != null) return
+        if (isRunning) return
+        isRunning = true
 
-        server = embeddedServer(CIO, port = port, host = "127.0.0.1") {
-            routing {
-                get("/") {
-                    call.respondText(
-                        "Google Flow Android MCP Server v3.5 (Active)",
-                        ContentType.Text.Plain
-                    )
+        threadPool.execute {
+            try {
+                serverSocket = ServerSocket().apply {
+                    reuseAddress = true
+                    bind(InetSocketAddress("127.0.0.1", port))
                 }
+                engine.bridge.log("Native POSIX HTTP Server listening on http://127.0.0.1:$port")
 
-                get("/api/status") {
-                    val deferred = CompletableDeferred<String>()
+                while (isRunning && serverSocket?.isClosed == false) {
+                    val clientSocket = serverSocket?.accept() ?: break
+                    threadPool.execute {
+                        handleClient(clientSocket)
+                    }
+                }
+            } catch (e: Exception) {
+                if (isRunning) {
+                    engine.bridge.log("Server socket error: ${e.message}")
+                }
+            }
+        }
+    }
+
+    private fun handleClient(socket: Socket) {
+        try {
+            socket.soTimeout = 10000
+            val input = BufferedReader(InputStreamReader(socket.getInputStream()))
+            val output = socket.getOutputStream()
+
+            val requestLine = input.readLine() ?: return
+            val parts = requestLine.split(" ")
+            if (parts.size < 2) return
+
+            val method = parts[0]
+            val path = parts[1].split("?")[0]
+
+            // Read Headers
+            var contentLength = 0
+            var line: String?
+            while (input.readLine().also { line = it } != null) {
+                if (line.isNullOrBlank()) break
+                if (line!!.startsWith("Content-Length:", ignoreCase = true)) {
+                    contentLength = line!!.substring(15).trim().toIntOrNull() ?: 0
+                }
+            }
+
+            // Read Body
+            val body = if (contentLength > 0) {
+                val chars = CharArray(contentLength)
+                var read = 0
+                while (read < contentLength) {
+                    val r = input.read(chars, read, contentLength - read)
+                    if (r == -1) break
+                    read += r
+                }
+                String(chars, 0, read)
+            } else ""
+
+            handleRoute(method, path, body, output)
+        } catch (e: Exception) {
+            // Socket handled
+        } finally {
+            try { socket.close() } catch (e: Exception) {}
+        }
+    }
+
+    private fun handleRoute(method: String, path: String, body: String, output: OutputStream) {
+        when {
+            method == "GET" && path == "/" -> {
+                sendResponse(output, 200, "text/plain", "Google Flow Android Native MCP Server (Active)")
+            }
+
+            method == "GET" && path == "/api/status" -> {
+                val deferred = CompletableDeferred<String>()
+                mainHandler.post {
                     engine.checkStatus { jsonStr ->
                         deferred.complete(jsonStr)
                     }
-                    val result = withTimeoutOrNull(3000) { deferred.await() } ?: "{}"
-                    call.respondText(result, ContentType.Application.Json)
                 }
+                val result = runBlocking { withTimeoutOrNull(4000) { deferred.await() } ?: "{}" }
+                sendResponse(output, 200, "application/json", result)
+            }
 
-                // Export current authenticated cookies directly to Python
-                get("/api/cookies") {
+            method == "GET" && path == "/api/cookies" -> {
+                val deferred = CompletableDeferred<Map<String, Any>>()
+                mainHandler.post {
                     val cookieManager = CookieManager.getInstance()
                     val labsCookies = cookieManager.getCookie("https://labs.google") ?: ""
                     val googleCookies = cookieManager.getCookie("https://google.com") ?: ""
@@ -56,365 +130,175 @@ class FlowMcpServer(
                         .filter { it.isNotBlank() }
                         .joinToString("; ")
 
-                    val res = mapOf(
+                    deferred.complete(mapOf(
                         "success" to true,
                         "cookieHeader" to combined,
                         "labsCookies" to labsCookies,
                         "googleCookies" to googleCookies,
                         "accountsCookies" to accountsCookies
-                    )
-                    call.respondText(gson.toJson(res), ContentType.Application.Json)
+                    ))
                 }
+                val result = runBlocking { withTimeoutOrNull(3000) { deferred.await() } ?: mapOf("success" to false) }
+                sendResponse(output, 200, "application/json", gson.toJson(result))
+            }
 
-                // Inject cookies into Android App WebView
-                post("/api/cookies") {
-                    val body = call.receiveText()
-                    val json = gson.fromJson(body, JsonObject::class.java)
-                    val cookies = json.get("cookies")?.asString
-                    if (!cookies.isNullOrBlank()) {
-                        engine.importCookies(cookies)
-                        val res = mapOf("success" to true, "message" to "Cookies imported")
-                        call.respondText(gson.toJson(res), ContentType.Application.Json)
-                    } else {
-                        val res = mapOf("error" to "No cookies provided")
-                        call.respondText(gson.toJson(res), ContentType.Application.Json, HttpStatusCode.BadRequest)
-                    }
+            method == "POST" && path == "/api/cookies" -> {
+                val json = gson.fromJson(body, JsonObject::class.java)
+                val cookies = json.get("cookies")?.asString
+                if (!cookies.isNullOrBlank()) {
+                    engine.importCookies(cookies)
+                    sendResponse(output, 200, "application/json", gson.toJson(mapOf("success" to true)))
+                } else {
+                    sendResponse(output, 400, "application/json", gson.toJson(mapOf("error" to "No cookies")))
                 }
+            }
 
-                // Get complete page HTML source for BeautifulSoup scraping
-                get("/api/page-source") {
-                    val deferred = CompletableDeferred<String>()
-                    engine.webView?.post {
-                        engine.webView?.evaluateJavascript("document.documentElement.outerHTML") { htmlResult ->
-                            val unescaped = if (htmlResult != null && htmlResult.startsWith("\"") && htmlResult.endsWith("\"")) {
-                                try {
-                                    gson.fromJson(htmlResult, String::class.java)
-                                } catch (e: Exception) {
-                                    htmlResult
-                                }
-                            } else htmlResult ?: ""
-                            deferred.complete(unescaped)
-                        }
+            method == "GET" && path == "/api/page-source" -> {
+                val deferred = CompletableDeferred<String>()
+                mainHandler.post {
+                    engine.webView?.evaluateJavascript("document.documentElement.outerHTML") { htmlResult ->
+                        val unescaped = if (htmlResult != null && htmlResult.startsWith("\"") && htmlResult.endsWith("\"")) {
+                            try {
+                                gson.fromJson(htmlResult, String::class.java)
+                            } catch (e: Exception) {
+                                htmlResult
+                            }
+                        } else htmlResult ?: ""
+                        deferred.complete(unescaped)
                     } ?: deferred.complete("")
-                    
-                    val html = withTimeoutOrNull(4000) { deferred.await() } ?: ""
-                    call.respondText(html, ContentType.Text.Html)
                 }
+                val html = runBlocking { withTimeoutOrNull(4000) { deferred.await() } ?: "" }
+                sendResponse(output, 200, "text/html", html)
+            }
 
-                // Execute arbitrary JavaScript in the WebView with safe timeout
-                post("/api/eval") {
-                    val body = call.receiveText()
-                    val json = gson.fromJson(body, JsonObject::class.java)
-                    val script = json.get("script")?.asString ?: ""
-                    
-                    val deferred = CompletableDeferred<String>()
-                    engine.webView?.post {
-                        engine.webView?.evaluateJavascript(script) { result ->
-                            deferred.complete(result ?: "null")
-                        }
+            method == "POST" && path == "/api/eval" -> {
+                val json = gson.fromJson(body, JsonObject::class.java)
+                val script = json.get("script")?.asString ?: ""
+                val deferred = CompletableDeferred<String>()
+                mainHandler.post {
+                    engine.webView?.evaluateJavascript(script) { result ->
+                        deferred.complete(result ?: "null")
                     } ?: deferred.complete("null")
-
-                    val evalResult = withTimeoutOrNull(4000) { deferred.await() } ?: "{\"status\":\"executed_or_navigating\"}"
-                    call.respondText(evalResult, ContentType.Application.Json)
                 }
+                val evalResult = runBlocking { withTimeoutOrNull(4000) { deferred.await() } ?: "{\"status\":\"executed\"}" }
+                sendResponse(output, 200, "application/json", evalResult)
+            }
 
-                // Navigate WebView to specific URL
-                post("/api/navigate") {
-                    val body = call.receiveText()
-                    val json = gson.fromJson(body, JsonObject::class.java)
-                    val url = json.get("url")?.asString ?: ""
-                    if (url.isNotBlank()) {
-                        engine.webView?.post {
-                            engine.webView?.loadUrl(url)
-                        }
-                        val res = mapOf("success" to true, "navigatedTo" to url)
-                        call.respondText(gson.toJson(res), ContentType.Application.Json)
-                    } else {
-                        val res = mapOf("error" to "URL is required")
-                        call.respondText(gson.toJson(res), ContentType.Application.Json, HttpStatusCode.BadRequest)
+            method == "POST" && path == "/api/navigate" -> {
+                val json = gson.fromJson(body, JsonObject::class.java)
+                val url = json.get("url")?.asString ?: ""
+                if (url.isNotBlank()) {
+                    mainHandler.post {
+                        engine.webView?.loadUrl(url)
                     }
+                    sendResponse(output, 200, "application/json", gson.toJson(mapOf("success" to true, "navigatedTo" to url)))
+                } else {
+                    sendResponse(output, 400, "application/json", gson.toJson(mapOf("error" to "URL required")))
                 }
+            }
 
-                get("/api/dom-dump") {
-                    val deferred = CompletableDeferred<String>()
+            method == "GET" && path == "/api/dom-dump" -> {
+                val deferred = CompletableDeferred<String>()
+                mainHandler.post {
                     engine.dumpDom { jsonStr ->
                         deferred.complete(jsonStr)
                     }
-                    val result = withTimeoutOrNull(4000) { deferred.await() } ?: "{}"
-                    call.respondText(result, ContentType.Application.Json)
                 }
-
-                get("/api/projects") {
-                    val deferred = CompletableDeferred<String>()
-                    engine.listProjects { jsonStr ->
-                        deferred.complete(jsonStr)
-                    }
-                    val result = withTimeoutOrNull(4000) { deferred.await() } ?: "[]"
-                    call.respondText(result, ContentType.Application.Json)
-                }
-
-                post("/api/projects") {
-                    val body = call.receiveText()
-                    val json = gson.fromJson(body, JsonObject::class.java)
-                    val name = json.get("name")?.asString ?: "New Project"
-                    engine.createProject(name)
-                    val res = mapOf("status" to "created", "name" to name)
-                    call.respondText(gson.toJson(res), ContentType.Application.Json)
-                }
-
-                post("/api/generate") {
-                    val body = call.receiveText()
-                    val json = gson.fromJson(body, JsonObject::class.java)
-                    val prompt = json.get("prompt")?.asString ?: ""
-                    val model = json.get("model")?.asString ?: "Nano Banana 2"
-                    val aspectRatio = json.get("aspectRatio")?.asString ?: "1:1"
-                    val count = json.get("count")?.asInt ?: 1
-                    val outputPath = json.get("outputPath")?.asString
-
-                    if (prompt.isBlank()) {
-                        val res = mapOf("error" to "Prompt is required")
-                        call.respondText(gson.toJson(res), ContentType.Application.Json, HttpStatusCode.BadRequest)
-                        return@post
-                    }
-
-                    val deferred = CompletableDeferred<String>()
-                    val taskId = engine.generateImage(prompt, model, aspectRatio, count) { tId ->
-                        deferred.complete(tId)
-                    }
-
-                    val genResult = withTimeoutOrNull(240000) {
-                        engine.bridge.generationEvents.first { it.taskId == taskId }
-                    }
-
-                    if (genResult != null && genResult.success) {
-                        val mediaUrl = genResult.mediaUrl
-                        try {
-                            val localFile = engine.downloadMedia(mediaUrl, outputPath)
-                            val res = mapOf(
-                                "success" to true,
-                                "taskId" to taskId,
-                                "mediaUrl" to mediaUrl,
-                                "localPath" to localFile.absolutePath,
-                                "model" to model,
-                                "aspectRatio" to aspectRatio
-                            )
-                            call.respondText(gson.toJson(res), ContentType.Application.Json)
-                        } catch (e: Exception) {
-                            val res = mapOf(
-                                "success" to true,
-                                "taskId" to taskId,
-                                "mediaUrl" to mediaUrl,
-                                "downloadError" to e.message
-                            )
-                            call.respondText(gson.toJson(res), ContentType.Application.Json)
-                        }
-                    } else {
-                        val res = mapOf("error" to (genResult?.errorMessage ?: "Generation timed out or failed on device"))
-                        call.respondText(gson.toJson(res), ContentType.Application.Json, HttpStatusCode.InternalServerError)
-                    }
-                }
-
-                post("/api/generate-with-reference") {
-                    val body = call.receiveText()
-                    val json = gson.fromJson(body, JsonObject::class.java)
-                    val prompt = json.get("prompt")?.asString ?: ""
-                    val imagePath = json.get("imagePath")?.asString ?: ""
-                    val model = json.get("model")?.asString ?: "Nano Banana 2"
-                    val aspectRatio = json.get("aspectRatio")?.asString ?: "1:1"
-                    val count = json.get("count")?.asInt ?: 1
-                    val outputPath = json.get("outputPath")?.asString
-
-                    val refFile = File(imagePath)
-                    if (!refFile.exists()) {
-                        val res = mapOf("error" to "Reference image not found: $imagePath")
-                        call.respondText(gson.toJson(res), ContentType.Application.Json, HttpStatusCode.BadRequest)
-                        return@post
-                    }
-
-                    val base64Image = Base64.encodeToString(refFile.readBytes(), Base64.NO_WRAP)
-                    val mimeType = if (refFile.name.endsWith(".png", true)) "image/png" else "image/jpeg"
-
-                    val deferred = CompletableDeferred<String>()
-                    val taskId = engine.generateWithReference(prompt, base64Image, mimeType, refFile.name, model, aspectRatio, count) { tId ->
-                        deferred.complete(tId)
-                    }
-
-                    val genResult = withTimeoutOrNull(260000) {
-                        engine.bridge.generationEvents.first { it.taskId == taskId }
-                    }
-
-                    if (genResult != null && genResult.success) {
-                        val mediaUrl = genResult.mediaUrl
-                        try {
-                            val localFile = engine.downloadMedia(mediaUrl, outputPath)
-                            val res = mapOf(
-                                "success" to true,
-                                "taskId" to taskId,
-                                "mediaUrl" to mediaUrl,
-                                "localPath" to localFile.absolutePath,
-                                "model" to model,
-                                "aspectRatio" to aspectRatio
-                            )
-                            call.respondText(gson.toJson(res), ContentType.Application.Json)
-                        } catch (e: Exception) {
-                            val res = mapOf(
-                                "success" to true,
-                                "taskId" to taskId,
-                                "mediaUrl" to mediaUrl,
-                                "downloadError" to e.message
-                            )
-                            call.respondText(gson.toJson(res), ContentType.Application.Json)
-                        }
-                    } else {
-                        val res = mapOf("error" to (genResult?.errorMessage ?: "Reference image generation failed or timed out"))
-                        call.respondText(gson.toJson(res), ContentType.Application.Json, HttpStatusCode.InternalServerError)
-                    }
-                }
-
-                post("/api/video") {
-                    val body = call.receiveText()
-                    val json = gson.fromJson(body, JsonObject::class.java)
-                    val prompt = json.get("prompt")?.asString ?: ""
-                    val model = json.get("model")?.asString ?: "Veo 3.1 - Fast"
-                    val aspectRatio = json.get("aspectRatio")?.asString ?: "16:9"
-                    val outputPath = json.get("outputPath")?.asString
-
-                    val deferred = CompletableDeferred<String>()
-                    val taskId = engine.generateVideo(prompt, model, aspectRatio) { tId ->
-                        deferred.complete(tId)
-                    }
-
-                    val genResult = withTimeoutOrNull(400000) {
-                        engine.bridge.generationEvents.first { it.taskId == taskId }
-                    }
-
-                    if (genResult != null && genResult.success) {
-                        val mediaUrl = genResult.mediaUrl
-                        try {
-                            val localFile = engine.downloadMedia(mediaUrl, outputPath)
-                            val res = mapOf(
-                                "success" to true,
-                                "taskId" to taskId,
-                                "mediaUrl" to mediaUrl,
-                                "localPath" to localFile.absolutePath,
-                                "model" to model,
-                                "aspectRatio" to aspectRatio
-                            )
-                            call.respondText(gson.toJson(res), ContentType.Application.Json)
-                        } catch (e: Exception) {
-                            val res = mapOf(
-                                "success" to true,
-                                "taskId" to taskId,
-                                "mediaUrl" to mediaUrl,
-                                "downloadError" to e.message
-                            )
-                            call.respondText(gson.toJson(res), ContentType.Application.Json)
-                        }
-                    } else {
-                        val res = mapOf("error" to (genResult?.errorMessage ?: "Video generation timed out or failed"))
-                        call.respondText(gson.toJson(res), ContentType.Application.Json, HttpStatusCode.InternalServerError)
-                    }
-                }
-
-                post("/mcp") {
-                    val body = call.receiveText()
-                    val rpcReq = gson.fromJson(body, JsonObject::class.java)
-                    val id = rpcReq.get("id")?.asInt ?: 1
-                    val method = rpcReq.get("method")?.asString ?: ""
-
-                    when (method) {
-                        "initialize" -> {
-                            val res = JsonObject().apply {
-                                addProperty("jsonrpc", "2.0")
-                                addProperty("id", id)
-                                add("result", JsonObject().apply {
-                                    addProperty("protocolVersion", "2024-11-05")
-                                    add("capabilities", JsonObject().apply {
-                                        add("tools", JsonObject())
-                                    })
-                                    add("serverInfo", JsonObject().apply {
-                                        addProperty("name", "google-flow-android-mcp")
-                                        addProperty("version", "3.5.0")
-                                    })
-                                })
-                            }
-                            call.respondText(gson.toJson(res), ContentType.Application.Json)
-                        }
-                        "tools/list" -> {
-                            val toolsJson = """
-                            {
-                                "jsonrpc": "2.0",
-                                "id": $id,
-                                "result": {
-                                    "tools": [
-                                        {
-                                            "name": "flow_status",
-                                            "description": "Check Google Flow status, active credits, and supported models (Veo 3.1 & Nano Banana 2)",
-                                            "inputSchema": { "type": "object", "properties": {} }
-                                        },
-                                        {
-                                            "name": "flow_dump_dom",
-                                            "description": "Inspect and dump full real-time DOM structure of the current Flow page",
-                                            "inputSchema": { "type": "object", "properties": {} }
-                                        },
-                                        {
-                                            "name": "flow_get_cookies",
-                                            "description": "Extract active session cookies from Android app for Python scraping",
-                                            "inputSchema": { "type": "object", "properties": {} }
-                                        },
-                                        {
-                                            "name": "flow_generate_image",
-                                            "description": "Generate an image using Google Flow / Nano Banana 2",
-                                            "inputSchema": {
-                                                "type": "object",
-                                                "properties": {
-                                                    "prompt": { "type": "string" },
-                                                    "model": { "type": "string", "enum": ["Nano Banana 2", "Nano Banana"], "default": "Nano Banana 2" },
-                                                    "aspect_ratio": { "type": "string", "enum": ["1:1", "16:9", "9:16", "4:3", "3:4", "2:3", "3:2"], "default": "1:1" },
-                                                    "count": { "type": "integer", "enum": [1, 2, 3, 4], "default": 1 },
-                                                    "output_path": { "type": "string" }
-                                                },
-                                                "required": ["prompt"]
-                                            }
-                                        },
-                                        {
-                                            "name": "flow_generate_video",
-                                            "description": "Generate video using Google Veo 3.1",
-                                            "inputSchema": {
-                                                "type": "object",
-                                                "properties": {
-                                                    "prompt": { "type": "string" },
-                                                    "aspect_ratio": { "type": "string", "enum": ["16:9", "9:16"], "default": "16:9" },
-                                                    "output_path": { "type": "string" }
-                                                },
-                                                "required": ["prompt"]
-                                            }
-                                        }
-                                    ]
-                                }
-                            }
-                            """.trimIndent()
-                            call.respondText(toolsJson, ContentType.Application.Json)
-                        }
-                        else -> {
-                            val errRes = JsonObject().apply {
-                                addProperty("jsonrpc", "2.0")
-                                addProperty("id", id)
-                                add("error", JsonObject().apply {
-                                    addProperty("code", -32601)
-                                    addProperty("message", "Method not found: $method")
-                                })
-                            }
-                            call.respondText(gson.toJson(errRes), ContentType.Application.Json)
-                        }
-                    }
-                }
+                val result = runBlocking { withTimeoutOrNull(4000) { deferred.await() } ?: "{}" }
+                sendResponse(output, 200, "application/json", result)
             }
-        }.start(wait = false)
+
+            method == "POST" && path == "/mcp" -> {
+                val rpcReq = gson.fromJson(body, JsonObject::class.java)
+                val id = rpcReq.get("id")?.asInt ?: 1
+                val rpcMethod = rpcReq.get("method")?.asString ?: ""
+
+                val responseJson = when (rpcMethod) {
+                    "initialize" -> {
+                        val res = JsonObject().apply {
+                            addProperty("jsonrpc", "2.0")
+                            addProperty("id", id)
+                            add("result", JsonObject().apply {
+                                addProperty("protocolVersion", "2024-11-05")
+                                add("capabilities", JsonObject().apply { add("tools", JsonObject()) })
+                                add("serverInfo", JsonObject().apply {
+                                    addProperty("name", "google-flow-android-mcp")
+                                    addProperty("version", "3.9.0")
+                                })
+                            })
+                        }
+                        gson.toJson(res)
+                    }
+                    "tools/list" -> {
+                        """
+                        {
+                            "jsonrpc": "2.0",
+                            "id": $id,
+                            "result": {
+                                "tools": [
+                                    {
+                                        "name": "flow_status",
+                                        "description": "Check Google Flow status, active credits, and supported models",
+                                        "inputSchema": { "type": "object", "properties": {} }
+                                    },
+                                    {
+                                        "name": "flow_dump_dom",
+                                        "description": "Inspect and dump full real-time DOM structure of the current Flow page",
+                                        "inputSchema": { "type": "object", "properties": {} }
+                                    },
+                                    {
+                                        "name": "flow_get_cookies",
+                                        "description": "Extract active session cookies from Android app for Python scraping",
+                                        "inputSchema": { "type": "object", "properties": {} }
+                                    }
+                                ]
+                            }
+                        }
+                        """.trimIndent()
+                    }
+                    else -> {
+                        val errRes = JsonObject().apply {
+                            addProperty("jsonrpc", "2.0")
+                            addProperty("id", id)
+                            add("error", JsonObject().apply {
+                                addProperty("code", -32601)
+                                addProperty("message", "Method not found: $rpcMethod")
+                            })
+                        }
+                        gson.toJson(errRes)
+                    }
+                }
+                sendResponse(output, 200, "application/json", responseJson)
+            }
+
+            else -> {
+                sendResponse(output, 404, "text/plain", "Not Found")
+            }
+        }
+    }
+
+    private fun sendResponse(output: OutputStream, statusCode: Int, contentType: String, content: String) {
+        val bytes = content.toByteArray(Charsets.UTF_8)
+        val statusText = when (statusCode) {
+            200 -> "OK"
+            400 -> "Bad Request"
+            404 -> "Not Found"
+            else -> "Internal Server Error"
+        }
+        val header = "HTTP/1.1 $statusCode $statusText\r\n" +
+                "Content-Type: $contentType; charset=utf-8\r\n" +
+                "Content-Length: ${bytes.size}\r\n" +
+                "Connection: close\r\n" +
+                "Access-Control-Allow-Origin: *\r\n" +
+                "\r\n"
+        output.write(header.toByteArray(Charsets.UTF_8))
+        output.write(bytes)
+        output.flush()
     }
 
     fun stop() {
-        server?.stop(1000, 2000)
-        server = null
+        isRunning = false
+        try { serverSocket?.close() } catch (e: Exception) {}
+        serverSocket = null
     }
 }
