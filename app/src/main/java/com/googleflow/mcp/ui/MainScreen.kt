@@ -195,86 +195,92 @@ fun MainScreen(
                 .padding(padding)
                 .background(Color(0xFF131314))
         ) {
-            when (selectedTab) {
-                0 -> {
-                    Column(Modifier.fillMaxSize()) {
-                        // Quick Action Bar on top of WebView
-                        Surface(
-                            color = Color(0xFF1E1F20),
-                            modifier = Modifier.fillMaxWidth()
+            // ALWAYS keep WebView active and attached in layout so it never loses dimensions
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+            ) {
+                Column(Modifier.fillMaxSize()) {
+                    // Quick Action Bar on top of WebView
+                    Surface(
+                        color = Color(0xFF1E1F20),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState())
+                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .horizontalScroll(rememberScrollState())
-                                    .padding(horizontal = 8.dp, vertical = 4.dp),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                            Button(
+                                onClick = { service?.engine?.loadFlowUrl() },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4285F4)),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
                             ) {
-                                Button(
-                                    onClick = { service?.engine?.loadFlowUrl() },
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4285F4)),
-                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
-                                ) {
-                                    Text("Google Flow", fontSize = 12.sp)
-                                }
-                                Button(
-                                    onClick = { service?.engine?.loadImageFxUrl() },
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF34A853)),
-                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
-                                ) {
-                                    Text("ImageFX", fontSize = 12.sp)
-                                }
-                                Button(
-                                    onClick = { service?.engine?.loadVideoFxUrl() },
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEA4335)),
-                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
-                                ) {
-                                    Text("VideoFX", fontSize = 12.sp)
-                                }
-                                Button(
-                                    onClick = { service?.engine?.dumpDom {} },
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF81C995)),
-                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
-                                ) {
-                                    Icon(Icons.Default.Code, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text("DOM Dump", color = Color.Black, fontSize = 12.sp)
-                                }
-                                Button(
-                                    onClick = { showCookieDialog = true },
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFBBC05)),
-                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
-                                ) {
-                                    Icon(Icons.Default.Key, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text("Cookie Yapıştır", color = Color.Black, fontSize = 12.sp)
-                                }
+                                Text("Google Flow", fontSize = 12.sp)
                             }
-                        }
-
-                        if (service != null) {
-                            AndroidView(
-                                factory = { ctx ->
-                                    (service.engine.webView ?: WebView(ctx).also {
-                                        service.engine.attachWebView(it)
-                                    }).apply {
-                                        (parent as? ViewGroup)?.removeView(this)
-                                        layoutParams = ViewGroup.LayoutParams(
-                                            ViewGroup.LayoutParams.MATCH_PARENT,
-                                            ViewGroup.LayoutParams.MATCH_PARENT
-                                        )
-                                    }
-                                },
-                                modifier = Modifier.fillMaxSize()
-                            )
-                        } else {
-                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                CircularProgressIndicator(color = Color(0xFF4285F4))
+                            Button(
+                                onClick = { service?.engine?.loadImageFxUrl() },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF34A853)),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                            ) {
+                                Text("ImageFX", fontSize = 12.sp)
+                            }
+                            Button(
+                                onClick = { service?.engine?.loadVideoFxUrl() },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEA4335)),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                            ) {
+                                Text("VideoFX", fontSize = 12.sp)
+                            }
+                            Button(
+                                onClick = { service?.engine?.dumpDom {} },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF81C995)),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                            ) {
+                                Icon(Icons.Default.Code, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("DOM Dump", color = Color.Black, fontSize = 12.sp)
+                            }
+                            Button(
+                                onClick = { showCookieDialog = true },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFBBC05)),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                            ) {
+                                Icon(Icons.Default.Key, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Cookie Yapıştır", color = Color.Black, fontSize = 12.sp)
                             }
                         }
                     }
+
+                    if (service != null) {
+                        AndroidView(
+                            factory = { ctx ->
+                                (service.engine.webView ?: WebView(ctx).also {
+                                    service.engine.attachWebView(it)
+                                }).apply {
+                                    (parent as? ViewGroup)?.removeView(this)
+                                    layoutParams = ViewGroup.LayoutParams(
+                                        ViewGroup.LayoutParams.MATCH_PARENT,
+                                        ViewGroup.LayoutParams.MATCH_PARENT
+                                    )
+                                }
+                            },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(color = Color(0xFF4285F4))
+                        }
+                    }
                 }
+            }
+
+            when (selectedTab) {
+                0 -> { /* WebView is visible underneath */ }
                 1 -> {
                     Column(
                         modifier = Modifier
