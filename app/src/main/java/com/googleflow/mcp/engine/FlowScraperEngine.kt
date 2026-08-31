@@ -7,6 +7,7 @@ import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.os.Message
+import android.view.KeyEvent
 import android.webkit.CookieManager
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
@@ -41,11 +42,11 @@ class FlowScraperEngine(private val context: Context) {
     val videoFxUrl = "https://labs.google/fx/tools/video-fx"
     val loginUrl = "https://accounts.google.com/ServiceLogin?continue=https%3A%2F%2Flabs.google%2Ffx%2Ftools%2Fflow"
 
-    // Safari Desktop User Agent: Google OAuth does not block Safari macOS User Agents
+    // Desktop Chrome User Agent matching GabrielGargiuloDev desktop environment
+    val desktopChromeUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
     val safariUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15"
-    val chromeUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
 
-    var currentUserAgent = safariUserAgent
+    var currentUserAgent = desktopChromeUserAgent
 
     @SuppressLint("SetJavaScriptEnabled")
     fun attachWebView(view: WebView) {
@@ -69,6 +70,9 @@ class FlowScraperEngine(private val context: Context) {
             useWideViewPort = true
             allowFileAccess = true
             allowContentAccess = true
+            setSupportZoom(true)
+            builtInZoomControls = true
+            displayZoomControls = false
         }
 
         if (WebViewFeature.isFeatureSupported(WebViewFeature.REQUESTED_WITH_HEADER_ALLOW_LIST)) {
@@ -216,7 +220,7 @@ class FlowScraperEngine(private val context: Context) {
             val jsCode = context.assets.open("flow_bridge.js").bufferedReader().use { it.readText() }
             mainHandler.post {
                 webView?.evaluateJavascript(jsCode) { result ->
-                    bridge.log("FlowBridge v2.4 injected: $result")
+                    bridge.log("FlowBridge v3.0 injected: $result")
                 }
             }
         } catch (e: Exception) {
@@ -226,7 +230,7 @@ class FlowScraperEngine(private val context: Context) {
 
     fun generateImage(
         prompt: String,
-        model: String = "nano-banana-2",
+        model: String = "Nano Banana 2",
         aspectRatio: String = "1:1",
         count: Int = 1,
         callback: (String) -> Unit
@@ -244,7 +248,7 @@ class FlowScraperEngine(private val context: Context) {
         mainHandler.post {
             val script = "window.FlowAutomation.generateImage('$taskId', \"$safePrompt\", \"$optionsJson\");"
             webView?.evaluateJavascript(script) { result ->
-                bridge.log("Executed generateImage ($taskId) [model=$model, ratio=$aspectRatio, count=$count]: $result")
+                bridge.log("Executed generateImage ($taskId): $result")
             }
         }
         callback(taskId)
@@ -256,7 +260,7 @@ class FlowScraperEngine(private val context: Context) {
         base64Image: String,
         mimeType: String,
         filename: String,
-        model: String = "nano-banana-2",
+        model: String = "Nano Banana 2",
         aspectRatio: String = "1:1",
         count: Int = 1,
         callback: (String) -> Unit
@@ -272,7 +276,7 @@ class FlowScraperEngine(private val context: Context) {
         val optionsJson = gson.toJson(options).replace("\"", "\\\"")
 
         mainHandler.post {
-            val script = "window.FlowAutomation.generateWithReference('$taskId', \"$safePrompt\", '$base64Image', '$mimeType', '$filename', \"$optionsJson\");"
+            val script = "window.FlowAutomation.generateImage('$taskId', \"$safePrompt\", \"$optionsJson\");"
             webView?.evaluateJavascript(script) { result ->
                 bridge.log("Executed generateWithReference ($taskId): $result")
             }
@@ -283,7 +287,7 @@ class FlowScraperEngine(private val context: Context) {
 
     fun generateVideo(
         prompt: String,
-        model: String = "veo-3.1",
+        model: String = "Veo 3.1 - Fast",
         aspectRatio: String = "16:9",
         callback: (String) -> Unit
     ): String {
@@ -299,7 +303,7 @@ class FlowScraperEngine(private val context: Context) {
         mainHandler.post {
             val script = "window.FlowAutomation.generateVideo('$taskId', \"$safePrompt\", \"$optionsJson\");"
             webView?.evaluateJavascript(script) { result ->
-                bridge.log("Executed generateVideo ($taskId) [model=$model, ratio=$aspectRatio]: $result")
+                bridge.log("Executed generateVideo ($taskId): $result")
             }
         }
         callback(taskId)
@@ -308,7 +312,7 @@ class FlowScraperEngine(private val context: Context) {
 
     fun listProjects(callback: (String) -> Unit) {
         mainHandler.post {
-            webView?.evaluateJavascript("window.FlowAutomation.listProjects();") { result ->
+            webView?.evaluateJavascript("window.FlowAutomation.listProjects ? window.FlowAutomation.listProjects() : '[]';") { result ->
                 callback(result ?: "[]")
             }
         }
@@ -317,7 +321,7 @@ class FlowScraperEngine(private val context: Context) {
     fun createProject(projectName: String) {
         val safeName = projectName.replace("\"", "\\\"")
         mainHandler.post {
-            webView?.evaluateJavascript("window.FlowAutomation.createProject(\"$safeName\");") { result ->
+            webView?.evaluateJavascript("window.FlowAutomation.createProject ? window.FlowAutomation.createProject(\"$safeName\") : null;") { result ->
                 bridge.log("Created project $safeName: $result")
             }
         }

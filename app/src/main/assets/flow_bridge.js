@@ -1,181 +1,214 @@
 /**
- * Google Flow & FX Suite Automation Bridge & Scraper (v2.6)
- * Complete Lexical/Slate/React Contenteditable Engine & Multi-Event Dispatcher.
+ * Google Flow Android MCP Bridge (v3.0 - Desktop Playwright Engine Port)
+ * Direct 1:1 port of GabrielGargiuloDev/google-flow-mcp
  */
 
 (function() {
     if (window.FlowBridgeInitialized) return;
     window.FlowBridgeInitialized = true;
 
-    console.log("[FlowBridge] Initializing Google Flow Bridge v2.6 (Rich Text & Full Event Trigger)...");
+    console.log("[FlowBridge v3.0] Initializing Google Flow Desktop Port...");
 
-    function simulateUserTyping(element, text) {
-        element.focus();
+    // Baseline UUID tracker to ensure we only capture newly generated images
+    let baselineUuids = [];
 
-        // 1. Mouse/Pointer focus sequence
-        ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(evt => {
-            element.dispatchEvent(new MouseEvent(evt, { bubbles: true, cancelable: true, view: window }));
+    function captureBaselineUuids() {
+        const set = new Set();
+        document.querySelectorAll('img, video').forEach(el => {
+            const src = el.src || el.currentSrc || el.getAttribute('poster') || '';
+            const match = src.match(/media\.getMediaUrlRedirect\?name=([a-f0-9-]+)/);
+            if (match) set.add(match[1]);
         });
-
-        // 2. Clear content
-        if (element.isContentEditable || element.getAttribute('contenteditable') === 'true') {
-            const selection = window.getSelection();
-            const range = document.createRange();
-            range.selectNodeContents(element);
-            selection.removeAllRanges();
-            selection.addRange(range);
-            document.execCommand('delete', false, null);
-
-            // 3. Dispatch beforeinput (Lexical / Slate / React 18+ requirement)
-            try {
-                const beforeInput = new InputEvent('beforeinput', {
-                    bubbles: true,
-                    cancelable: true,
-                    inputType: 'insertText',
-                    data: text
-                });
-                element.dispatchEvent(beforeInput);
-            } catch (e) {}
-
-            // 4. ExecCommand insertText
-            document.execCommand('insertText', false, text);
-
-            if (!element.textContent || !element.textContent.includes(text)) {
-                element.textContent = text;
-            }
-
-            // 5. Input and change events
-            try {
-                const inputEvent = new InputEvent('input', {
-                    bubbles: true,
-                    cancelable: true,
-                    inputType: 'insertText',
-                    data: text
-                });
-                element.dispatchEvent(inputEvent);
-            } catch (e) {
-                element.dispatchEvent(new Event('input', { bubbles: true }));
-            }
-            element.dispatchEvent(new Event('change', { bubbles: true }));
-
-            // 6. Character-level keystrokes to ensure validation triggers
-            element.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', code: 'KeyA', keyCode: 65, which: 65, bubbles: true }));
-            element.dispatchEvent(new KeyboardEvent('keypress', { key: 'a', code: 'KeyA', keyCode: 65, which: 65, bubbles: true }));
-            element.dispatchEvent(new KeyboardEvent('keyup', { key: 'a', code: 'KeyA', keyCode: 65, which: 65, bubbles: true }));
-            
-            // Backspace the dummy key if needed
-            element.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', code: 'Backspace', keyCode: 8, which: 8, bubbles: true }));
-            element.dispatchEvent(new KeyboardEvent('keyup', { key: 'Backspace', code: 'Backspace', keyCode: 8, which: 8, bubbles: true }));
-        } else {
-            const proto = element.tagName.toLowerCase() === 'textarea'
-                ? window.HTMLTextAreaElement.prototype
-                : window.HTMLInputElement.prototype;
-            const nativeSetter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
-            if (nativeSetter) nativeSetter.call(element, text);
-            else element.value = text;
-
-            element.dispatchEvent(new Event('input', { bubbles: true }));
-            element.dispatchEvent(new Event('change', { bubbles: true }));
-        }
+        baselineUuids = Array.from(set);
+        console.log("[FlowBridge] Baseline media captured:", baselineUuids.length);
     }
 
-    function forceTriggerClick(button) {
-        if (!button) return false;
-        
-        // Remove disabled flags
-        button.removeAttribute('disabled');
-        button.disabled = false;
-        button.setAttribute('aria-disabled', 'false');
+    function forceClick(element) {
+        if (!element) return false;
+        element.removeAttribute('disabled');
+        element.disabled = false;
+        element.setAttribute('aria-disabled', 'false');
 
-        // Full mouse/touch event chain
-        ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(evt => {
-            button.dispatchEvent(new MouseEvent(evt, {
+        ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(evtType => {
+            element.dispatchEvent(new MouseEvent(evtType, {
                 bubbles: true,
                 cancelable: true,
                 view: window,
                 buttons: 1
             }));
         });
+        try { element.click(); } catch(e) {}
+        return true;
+    }
 
-        // Also call native .click()
-        try {
-            button.click();
-        } catch (e) {}
+    function ensureProject() {
+        if (window.location.href.includes('/project/')) {
+            return true;
+        }
+
+        // Try clicking New project button
+        const newBtn = Array.from(document.querySelectorAll('button, a')).find(b => {
+            const t = (b.textContent || '').trim().toLowerCase();
+            return t.includes('new project') || t.includes('nuovo progetto') || t.includes('nouveau projet') || t.includes('yeni proje') || t.includes('proje oluştur');
+        });
+
+        if (newBtn) {
+            forceClick(newBtn);
+            return true;
+        }
+
+        // Try finding any existing project card
+        const projectLink = document.querySelector('a[href*="/project/"]');
+        if (projectLink) {
+            projectLink.click();
+            return true;
+        }
+
+        return false;
+    }
+
+    function switchToImageTab() {
+        const imageTab = document.querySelector('button[role="tab"][id*="trigger-IMAGE"], button[role="tab"]:has-text("Image"), button[role="tab"]:has-text("Resim")');
+        if (imageTab) {
+            forceClick(imageTab);
+        }
+    }
+
+    function checkAgentConfirmation() {
+        const buttons = Array.from(document.querySelectorAll('button'));
+        const confirmBtn = buttons.find(b => {
+            const t = (b.textContent || '').trim().toLowerCase();
+            return t.includes('accepter') || t.includes('approve') || t.includes('approva') || t.includes('onayla') || t.includes('kabul et');
+        });
+        if (confirmBtn) {
+            console.log("[FlowBridge] Agent confirmation dialog detected, approving:", confirmBtn.textContent);
+            forceClick(confirmBtn);
+            return true;
+        }
+        return false;
+    }
+
+    function setPromptText(prompt, isVideo, model, duration) {
+        // Find contenteditable div or textarea (Agent bar)
+        let promptInput = document.querySelector('[contenteditable="true"]:not([aria-hidden="true"])') ||
+                          document.querySelector('div[contenteditable="true"]') ||
+                          document.querySelector('textarea:not([aria-hidden="true"])') ||
+                          document.querySelector('textarea');
+
+        if (!promptInput) {
+            return false;
+        }
+
+        promptInput.focus();
+
+        // GabrielGargiuloDev Imperative Prompt Formulation
+        let imperativePrompt = "";
+        if (isVideo) {
+            imperativePrompt = `Genera subito un video di ${duration || '4s'} con il modello ${model || 'Veo 3.1'}, senza farmi domande e senza chiedere chiarimenti. Attieniti FEDELMENTE a questa descrizione: includi TUTTI gli elementi, soggetti, azioni e dettagli indicati, non aggiungere nulla che non sia richiesto e non omettere nulla. Descrizione: ${prompt}`;
+        } else {
+            imperativePrompt = `Genera subito un'immagine, senza farmi domande e senza chiedere chiarimenti. Attieniti FEDELMENTE a questa descrizione: includi TUTTI gli elementi, soggetti e dettagli indicati, non aggiungere nulla che non sia richiesto e non omettere nulla. Descrizione: ${prompt}`;
+        }
+
+        // Selection clear & execCommand
+        if (promptInput.isContentEditable || promptInput.getAttribute('contenteditable') === 'true') {
+            const selection = window.getSelection();
+            const range = document.createRange();
+            range.selectNodeContents(promptInput);
+            selection.removeAllRanges();
+            selection.addRange(range);
+
+            document.execCommand('delete', false, null);
+
+            try {
+                promptInput.dispatchEvent(new InputEvent('beforeinput', {
+                    bubbles: true,
+                    cancelable: true,
+                    inputType: 'insertText',
+                    data: imperativePrompt
+                }));
+            } catch(e) {}
+
+            document.execCommand('insertText', false, imperativePrompt);
+
+            if (!promptInput.textContent.includes(imperativePrompt)) {
+                promptInput.textContent = imperativePrompt;
+            }
+
+            promptInput.dispatchEvent(new Event('input', { bubbles: true }));
+            promptInput.dispatchEvent(new Event('change', { bubbles: true }));
+        } else {
+            promptInput.value = imperativePrompt;
+            promptInput.dispatchEvent(new Event('input', { bubbles: true }));
+            promptInput.dispatchEvent(new Event('change', { bubbles: true }));
+        }
 
         return true;
     }
 
-    function triggerGenerateAction() {
+    function submitGeneration() {
         const buttons = Array.from(document.querySelectorAll('button'));
         
-        // Match button containing "arrow_forward" or "Oluştur" or "Generate" or "Create"
-        const candidates = buttons.filter(b => {
+        // Exact GabrielGargiuloDev selector: button containing material icon 'arrow_forward'
+        let submitBtn = buttons.find(b => {
             const txt = (b.textContent || '').trim();
-            const cls = (b.className || '');
-            return txt.includes('arrow_forward') || txt.includes('Oluştur') || txt.includes('Generate') || txt.includes('Create') || cls.includes('kmC') || cls.includes('joS');
+            return txt.includes('arrow_forward') || txt.includes('Oluştur') || txt.includes('Generate') || txt.includes('Create');
         });
 
-        console.log("[FlowBridge] Found candidate generate buttons:", candidates.length);
-
-        for (const btn of candidates) {
-            console.log("[FlowBridge] Triggering candidate button:", btn.textContent);
-            forceTriggerClick(btn);
+        if (submitBtn) {
+            console.log("[FlowBridge] Found submit button:", submitBtn.textContent);
+            forceClick(submitBtn);
+            if (window.AndroidBridge) window.AndroidBridge.log("✓ Clicked submit button: " + submitBtn.textContent);
+            return true;
         }
 
-        // Also trigger Enter key on prompt input
-        const promptEl = document.querySelector('div[contenteditable="true"], textarea');
-        if (promptEl) {
-            ['keydown', 'keypress', 'keyup'].forEach(evt => {
-                promptEl.dispatchEvent(new KeyboardEvent(evt, {
-                    key: 'Enter',
-                    code: 'Enter',
-                    keyCode: 13,
-                    which: 13,
-                    ctrlKey: true,
-                    bubbles: true,
-                    cancelable: true
-                }));
-                promptEl.dispatchEvent(new KeyboardEvent(evt, {
-                    key: 'Enter',
-                    code: 'Enter',
-                    keyCode: 13,
-                    which: 13,
-                    bubbles: true,
-                    cancelable: true
-                }));
-            });
+        // Fallback: Dispatched Enter
+        const promptInput = document.querySelector('[contenteditable="true"], textarea');
+        if (promptInput) {
+            promptInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, ctrlKey: true, bubbles: true }));
         }
+        return false;
     }
 
-    function applyModelSettings(model, aspectRatio, count) {
-        const settingsBtn = Array.from(document.querySelectorAll('button')).find(b => {
-            const txt = (b.textContent || '');
-            return txt.includes('Nano Banana') || txt.includes('Veo') || txt.includes('🍌') || txt.includes('crop_square');
-        });
+    function pollForOutput(taskId, mediaType, timeoutMs) {
+        const startTime = Date.now();
+        const checkInterval = setInterval(() => {
+            // Check for agent confirmation every tick
+            checkAgentConfirmation();
 
-        if (settingsBtn) {
-            forceTriggerClick(settingsBtn);
-            setTimeout(() => {
-                const options = Array.from(document.querySelectorAll('button, div[role="menuitem"], div[role="radio"], span'));
-                
-                if (model) {
-                    const mOption = options.find(o => o.textContent && o.textContent.toLowerCase().includes(model.toLowerCase()));
-                    if (mOption) forceTriggerClick(mOption);
+            const foundUuids = [];
+            document.querySelectorAll('img, video').forEach(el => {
+                const src = el.src || el.currentSrc || el.getAttribute('poster') || '';
+                const match = src.match(/media\.getMediaUrlRedirect\?name=([a-f0-9-]+)/);
+                if (match) {
+                    const uuid = match[1];
+                    if (!baselineUuids.includes(uuid) && !foundUuids.includes(uuid)) {
+                        foundUuids.push(uuid);
+                    }
                 }
+            });
 
-                if (aspectRatio) {
-                    const rOption = options.find(o => o.textContent && o.textContent.includes(aspectRatio));
-                    if (rOption) forceTriggerClick(rOption);
+            if (foundUuids.length > 0) {
+                clearInterval(checkInterval);
+                const mediaUrl = `https://labs.google/fx/api/trpc/media.getMediaUrlRedirect?name=${foundUuids[0]}`;
+                console.log("[FlowBridge] Generated media UUID detected:", foundUuids[0]);
+                if (window.AndroidBridge) {
+                    window.AndroidBridge.onGenerationCompleted(taskId, mediaUrl, JSON.stringify({
+                        uuids: foundUuids,
+                        count: foundUuids.length,
+                        mediaType: mediaType,
+                        completedAt: Date.now()
+                    }));
                 }
+                return;
+            }
 
-                if (count && count > 1) {
-                    const cOption = options.find(o => o.textContent && o.textContent.includes(`x${count}`));
-                    if (cOption) forceTriggerClick(cOption);
+            if (Date.now() - startTime > timeoutMs) {
+                clearInterval(checkInterval);
+                if (window.AndroidBridge) {
+                    window.AndroidBridge.onError(taskId, "Timeout waiting for Flow media output");
                 }
-
-                document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }));
-            }, 300);
-        }
+            }
+        }, 1500);
     }
 
     window.FlowAutomation = {
@@ -193,7 +226,7 @@
                 url: window.location.href,
                 isLoggedIn: this.checkAuth(),
                 credits: "Active",
-                supportedModels: ["nano-banana-2", "nano-banana", "veo-3.1"],
+                supportedModels: ["Nano Banana 2", "Nano Banana", "Veo 3.1 - Fast", "Veo 3.1 - Quality", "Omni Flash"],
                 supportedAspectRatios: ["1:1", "16:9", "9:16", "4:3", "3:4", "2:3", "3:2"],
                 maxOutputsCount: 4,
                 timestamp: Date.now()
@@ -248,7 +281,6 @@
                 }
                 return jsonStr;
             } catch (err) {
-                console.error("[FlowBridge] dumpFullDom error:", err);
                 return JSON.stringify({ error: err.toString() });
             }
         },
@@ -257,65 +289,25 @@
             console.log("[FlowBridge] generateImage task:", taskId, prompt);
             try {
                 const options = optionsJson ? JSON.parse(optionsJson) : {};
-                const model = options.model || "nano-banana-2";
-                const aspectRatio = options.aspectRatio || "1:1";
-                const count = options.count || 1;
+                const model = options.model || "Nano Banana 2";
 
-                applyModelSettings(model, aspectRatio, count);
+                ensureProject();
+                switchToImageTab();
+                captureBaselineUuids();
 
-                const promptDiv = Array.from(document.querySelectorAll('div[contenteditable="true"]')).find(d => 
-                    d.isContentEditable || (d.textContent && (d.textContent.includes('Ne oluşturmak') || d.textContent.includes('want to create')))
-                ) || document.querySelector('div[contenteditable="true"], textarea');
-
-                if (!promptDiv) {
-                    if (window.AndroidBridge) {
-                        window.AndroidBridge.onError(taskId, "Could not find prompt contenteditable box on page: " + window.location.href);
-                    }
+                const filled = setPromptText(prompt, false, model);
+                if (!filled) {
+                    if (window.AndroidBridge) window.AndroidBridge.onError(taskId, "Could not find prompt input field");
                     return false;
                 }
 
-                simulateUserTyping(promptDiv, prompt);
-
-                // Multiple timed trigger attempts to ensure React state commits
-                setTimeout(() => { triggerGenerateAction(); }, 300);
-                setTimeout(() => { triggerGenerateAction(); }, 700);
+                // Wait 400ms then click submit
                 setTimeout(() => {
-                    triggerGenerateAction();
-                    this.watchForOutput(taskId, 'image', count, 200000);
-                }, 1200);
-
-                return true;
-            } catch (err) {
-                console.error("[FlowBridge] generateImage error:", err);
-                if (window.AndroidBridge) {
-                    window.AndroidBridge.onError(taskId, err.toString());
-                }
-                return false;
-            }
-        },
-
-        generateVideo: function(taskId, prompt, optionsJson) {
-            console.log("[FlowBridge] generateVideo task:", taskId, prompt);
-            try {
-                const options = optionsJson ? JSON.parse(optionsJson) : {};
-                const model = options.model || "veo-3.1";
-                const aspectRatio = options.aspectRatio || "16:9";
-
-                applyModelSettings(model, aspectRatio, 1);
-
-                const promptDiv = document.querySelector('div[contenteditable="true"], textarea');
-                if (!promptDiv) {
-                    if (window.AndroidBridge) window.AndroidBridge.onError(taskId, "Could not find prompt input");
-                    return false;
-                }
-
-                simulateUserTyping(promptDiv, prompt);
-
-                setTimeout(() => { triggerGenerateAction(); }, 300);
-                setTimeout(() => {
-                    triggerGenerateAction();
-                    this.watchForOutput(taskId, 'video', 1, 400000);
-                }, 800);
+                    submitGeneration();
+                    // Additional trigger after 800ms to ensure click registers
+                    setTimeout(() => { submitGeneration(); }, 800);
+                    pollForOutput(taskId, 'image', 240000);
+                }, 400);
 
                 return true;
             } catch (err) {
@@ -324,53 +316,33 @@
             }
         },
 
-        watchForOutput: function(taskId, mediaType, expectedCount, timeoutMs) {
-            const startTime = Date.now();
-            let completed = false;
-            expectedCount = expectedCount || 1;
+        generateVideo: function(taskId, prompt, optionsJson) {
+            console.log("[FlowBridge] generateVideo task:", taskId, prompt);
+            try {
+                const options = optionsJson ? JSON.parse(optionsJson) : {};
+                const model = options.model || "Veo 3.1 - Fast";
+                const duration = options.duration || "4s";
 
-            const existingMedia = Array.from(document.querySelectorAll('img[src*="media.getMediaUrlRedirect"], video[src*="media.getMediaUrlRedirect"]'))
-                .map(m => m.src);
+                ensureProject();
+                captureBaselineUuids();
 
-            const observer = new MutationObserver((mutations, obs) => {
-                if (completed) return;
-
-                const mediaElements = Array.from(document.querySelectorAll(
-                    mediaType === 'video' ? 'video[src*="media.getMediaUrlRedirect"], video[src]' : 'img[src*="media.getMediaUrlRedirect"], img[alt*="Üretilmiş resim" i], img[src*="googleusercontent"]'
-                ));
-
-                const validUrls = [];
-                for (const media of mediaElements) {
-                    const src = media.src || media.href;
-                    if (src && !existingMedia.includes(src) && !src.startsWith('data:image/svg') && !src.includes('avatar') && !validUrls.includes(src)) {
-                        validUrls.push(src);
-                    }
+                const filled = setPromptText(prompt, true, model, duration);
+                if (!filled) {
+                    if (window.AndroidBridge) window.AndroidBridge.onError(taskId, "Could not find prompt input field");
+                    return false;
                 }
 
-                if (validUrls.length >= expectedCount || (validUrls.length > 0 && Date.now() - startTime > 35000)) {
-                    completed = true;
-                    obs.disconnect();
-                    if (window.AndroidBridge) {
-                        window.AndroidBridge.onGenerationCompleted(taskId, validUrls[0], JSON.stringify({
-                            mediaType: mediaType,
-                            urls: validUrls,
-                            count: validUrls.length,
-                            completedAt: Date.now()
-                        }));
-                    }
-                    return;
-                }
+                setTimeout(() => {
+                    submitGeneration();
+                    setTimeout(() => { submitGeneration(); }, 800);
+                    pollForOutput(taskId, 'video', 480000);
+                }, 400);
 
-                if (Date.now() - startTime > timeoutMs) {
-                    completed = true;
-                    obs.disconnect();
-                    if (window.AndroidBridge) {
-                        window.AndroidBridge.onError(taskId, "Timeout waiting for generation output");
-                    }
-                }
-            });
-
-            observer.observe(document.body, { childList: true, subtree: true, attributes: true });
+                return true;
+            } catch (err) {
+                if (window.AndroidBridge) window.AndroidBridge.onError(taskId, err.toString());
+                return false;
+            }
         }
     };
 
@@ -378,5 +350,5 @@
         window.FlowAutomation.checkAuth();
     }, 5000);
 
-    console.log("[FlowBridge] Google Flow Bridge v2.6 Ready.");
+    console.log("[FlowBridge v3.0] Ready.");
 })();
