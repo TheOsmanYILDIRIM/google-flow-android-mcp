@@ -20,7 +20,7 @@ class FlowMcpServer(
     private val engine: FlowScraperEngine,
     private val port: Int = 8765
 ) {
-    private var server: CIOApplicationEngine? = null
+    private var server: ApplicationEngine? = null
     private val gson = Gson()
 
     fun start() {
