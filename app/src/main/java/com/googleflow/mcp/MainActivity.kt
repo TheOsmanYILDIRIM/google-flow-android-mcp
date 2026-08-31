@@ -10,6 +10,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
+import android.os.PowerManager
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -47,6 +48,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         checkAndRequestPermissions()
+        requestBatteryExemption()
         startFlowService()
         renderUi()
     }
@@ -55,6 +57,20 @@ class MainActivity : ComponentActivity() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
                 requestNotificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+    }
+
+    private fun requestBatteryExemption() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+            if (!powerManager.isIgnoringBatteryOptimizations(packageName)) {
+                try {
+                    val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                        data = Uri.parse("package:$packageName")
+                    }
+                    startActivity(intent)
+                } catch (e: Exception) {}
             }
         }
     }
