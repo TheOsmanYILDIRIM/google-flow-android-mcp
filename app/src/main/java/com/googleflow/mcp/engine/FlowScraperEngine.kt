@@ -6,11 +6,15 @@ import android.graphics.Bitmap
 import android.os.Environment
 import android.os.Handler
 import android.os.Looper
+import android.os.Message
 import android.webkit.CookieManager
 import android.webkit.WebChromeClient
+import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.webkit.WebSettingsCompat
+import androidx.webkit.WebViewFeature
 import com.google.gson.Gson
 import com.google.gson.JsonObject
 import kotlinx.coroutines.Dispatchers
@@ -31,8 +35,11 @@ class FlowScraperEngine(private val context: Context) {
     var webView: WebView? = null
         private set
 
-    private val flowUrl = "https://labs.google/fx/"
-    private val desktopUserAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+    val flowUrl = "https://labs.google/fx/"
+    val loginUrl = "https://accounts.google.com/ServiceLogin?continue=https%3A%2F%2Flabs.google%2Ffx%2F"
+    
+    // Clean Chrome Desktop User Agent without 'wv' or 'Version/4.0'
+    private val cleanDesktopUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
 
     @SuppressLint("SetJavaScriptEnabled")
     fun attachWebView(view: WebView) {
@@ -47,14 +54,36 @@ class FlowScraperEngine(private val context: Context) {
             domStorageEnabled = true
             databaseEnabled = true
             mediaPlaybackRequiresUserGesture = false
-            userAgentString = desktopUserAgent
+            userAgentString = cleanDesktopUserAgent
             cacheMode = WebSettings.LOAD_DEFAULT
             mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+            setSupportMultipleWindows(true)
+            javaScriptCanOpenWindowsAutomatically = true
+            loadWithOverviewMode = true
+            useWideViewPort = true
+            allowFileAccess = true
+            allowContentAccess = true
+        }
+
+        // Strip X-Requested-With header to prevent Google from blocking embedded login
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.REQUESTED_WITH_HEADER_ALLOW_LIST)) {
+            try {
+                WebSettingsCompat.setRequestedWithHeaderOriginAllowList(view.settings, emptySet())
+                bridge.log("Successfully stripped X-Requested-With header.")
+            } catch (e: Exception) {
+                bridge.log("Could not set RequestedWithHeader allow list: ${e.message}")
+            }
         }
 
         view.addJavascriptInterface(bridge, "AndroidBridge")
 
         view.webViewClient = object : WebViewClient() {
+            override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+                val url = request?.url?.toString() ?: return false
+                view?.loadUrl(url)
+                return true
+            }
+
             override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
                 super.onPageStarted(view, url, favicon)
                 bridge.log("Page started: $url")
@@ -62,13 +91,57 @@ class FlowScraperEngine(private val context: Context) {
 
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
+                cookieManager.flush()
                 bridge.log("Page finished: $url")
                 injectBridgeScript()
             }
         }
 
-        view.webChromeClient = WebChromeClient()
+        // Handle Google Login popups and redirects cleanly inside the same WebView
+        view.webChromeClient = object : WebChromeClient() {
+            override fun onCreateWindow(
+                view: WebView?,
+                isDialog: Boolean,
+                isUserGesture: Boolean,
+                resultMsg: Message?
+            ): Boolean {
+                val newWebView = WebView(context).apply {
+                    settings.javaScriptEnabled = true
+                    settings.userAgentString = cleanDesktopUserAgent
+                    settings.domStorageEnabled = true
+                    val cm = CookieManager.getInstance()
+                    cm.setAcceptCookie(true)
+                    cm.setAcceptThirdPartyCookies(this, true)
+                    
+                    webViewClient = object : WebViewClient() {
+                        override fun shouldOverrideUrlLoading(v: WebView?, req: WebResourceRequest?): Boolean {
+                            val targetUrl = req?.url?.toString() ?: return false
+                            this@FlowScraperEngine.webView?.loadUrl(targetUrl)
+                            return true
+                        }
+                    }
+                }
+
+                val transport = resultMsg?.obj as? WebView.WebViewTransport
+                transport?.webView = newWebView
+                resultMsg?.sendToTarget()
+                return true
+            }
+        }
+
         view.loadUrl(flowUrl)
+    }
+
+    fun loadLoginUrl() {
+        mainHandler.post {
+            webView?.loadUrl(loginUrl)
+        }
+    }
+
+    fun loadFlowUrl() {
+        mainHandler.post {
+            webView?.loadUrl(flowUrl)
+        }
     }
 
     private fun injectBridgeScript() {

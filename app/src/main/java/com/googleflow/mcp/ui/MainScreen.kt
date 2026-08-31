@@ -69,11 +69,29 @@ fun MainScreen(
                         Spacer(modifier = Modifier.width(8.dp))
                         Column {
                             Text("Google Flow MCP v2.0", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                            Text("127.0.0.1:8765 | ${if (authState) "Ready (Nano Banana 2 & Veo 3.1)" else "Needs Login ⚠️"}", style = MaterialTheme.typography.bodySmall, color = if (authState) Color(0xFF34A853) else Color(0xFFFBBC05))
+                            Text("127.0.0.1:8765 | ${if (authState) "Ready" else "Giriş Bekleniyor ⚠️"}", style = MaterialTheme.typography.bodySmall, color = if (authState) Color(0xFF34A853) else Color(0xFFFBBC05))
                         }
                     }
                 },
                 actions = {
+                    IconButton(onClick = {
+                        service?.engine?.loadLoginUrl()
+                    }) {
+                        Icon(
+                            imageVector = Icons.Default.AccountCircle,
+                            contentDescription = "Google Giriş Sayfası",
+                            tint = Color(0xFF8AB4F8)
+                        )
+                    }
+                    IconButton(onClick = {
+                        service?.engine?.loadFlowUrl()
+                    }) {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = "Flow'u Yenile",
+                            tint = Color.White
+                        )
+                    }
                     IconButton(onClick = {
                         service?.attachTo1x1Overlay()
                     }) {
@@ -124,24 +142,59 @@ fun MainScreen(
         ) {
             when (selectedTab) {
                 0 -> {
-                    if (service != null) {
-                        AndroidView(
-                            factory = { ctx ->
-                                (service.engine.webView ?: WebView(ctx).also {
-                                    service.engine.attachWebView(it)
-                                }).apply {
-                                    (parent as? ViewGroup)?.removeView(this)
-                                    layoutParams = ViewGroup.LayoutParams(
-                                        ViewGroup.LayoutParams.MATCH_PARENT,
-                                        ViewGroup.LayoutParams.MATCH_PARENT
-                                    )
+                    Column(Modifier.fillMaxSize()) {
+                        // Quick Action Bar on top of WebView
+                        Surface(
+                            color = Color(0xFF1E1F20),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Button(
+                                    onClick = { service?.engine?.loadLoginUrl() },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4285F4)),
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                                ) {
+                                    Icon(Icons.Default.Login, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Google Oturum Aç", fontSize = 12.sp)
                                 }
-                            },
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    } else {
-                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            CircularProgressIndicator(color = Color(0xFF4285F4))
+                                Button(
+                                    onClick = { service?.engine?.loadFlowUrl() },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3C4043)),
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                                ) {
+                                    Icon(Icons.Default.Home, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Flow'a Dön", fontSize = 12.sp)
+                                }
+                            }
+                        }
+
+                        if (service != null) {
+                            AndroidView(
+                                factory = { ctx ->
+                                    (service.engine.webView ?: WebView(ctx).also {
+                                        service.engine.attachWebView(it)
+                                    }).apply {
+                                        (parent as? ViewGroup)?.removeView(this)
+                                        layoutParams = ViewGroup.LayoutParams(
+                                            ViewGroup.LayoutParams.MATCH_PARENT,
+                                            ViewGroup.LayoutParams.MATCH_PARENT
+                                        )
+                                    }
+                                },
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        } else {
+                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                CircularProgressIndicator(color = Color(0xFF4285F4))
+                            }
                         }
                     }
                 }
@@ -183,17 +236,26 @@ fun MainScreen(
                                 Spacer(modifier = Modifier.height(8.dp))
                                 Text("• Endpoint: http://127.0.0.1:8765/sse", color = Color(0xFF8AB4F8), fontFamily = FontFamily.Monospace)
                                 Text("• Modeller: Nano Banana 2 & Veo 3.1", color = Color(0xFF81C995))
-                                Text("• Oturum: ${if (authState) "Açık (Hazır)" else "Giriş Bekleniyor ⚠️"}", color = if (authState) Color(0xFF34A853) else Color(0xFFEA4335))
+                                Text("• Oturum: ${if (authState) "Açık (Hazır ✓)" else "Giriş Bekleniyor ⚠️"}", color = if (authState) Color(0xFF34A853) else Color(0xFFEA4335))
                                 
                                 Spacer(modifier = Modifier.height(12.dp))
-                                Button(
-                                    onClick = { service?.attachTo1x1Overlay() },
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF34A853)),
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Icon(Icons.Default.Minimize, contentDescription = null)
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text("1x1 Görünmez Arka Plana Al")
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Button(
+                                        onClick = { service?.engine?.loadLoginUrl() },
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4285F4)),
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Text("Google Giriş", fontSize = 13.sp)
+                                    }
+                                    Button(
+                                        onClick = { service?.attachTo1x1Overlay() },
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF34A853)),
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Icon(Icons.Default.Minimize, contentDescription = null)
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("1x1 Arka Plan", fontSize = 13.sp)
+                                    }
                                 }
                             }
                         }
@@ -206,7 +268,6 @@ fun MainScreen(
                                 Text("Parametrik Üretim Testi", fontWeight = FontWeight.Bold, color = Color.White)
                                 Spacer(modifier = Modifier.height(8.dp))
 
-                                // Model Seçimi
                                 Text("Model:", fontSize = 12.sp, color = Color.Gray)
                                 Row(
                                     modifier = Modifier.horizontalScroll(rememberScrollState()),
@@ -223,7 +284,6 @@ fun MainScreen(
 
                                 Spacer(modifier = Modifier.height(8.dp))
 
-                                // Oran (Aspect Ratio) Seçimi
                                 Text("En/Boy Oranı (Aspect Ratio):", fontSize = 12.sp, color = Color.Gray)
                                 Row(
                                     modifier = Modifier.horizontalScroll(rememberScrollState()),
@@ -240,7 +300,6 @@ fun MainScreen(
 
                                 Spacer(modifier = Modifier.height(8.dp))
 
-                                // Çoklu Üretim (Count)
                                 Text("Çoklu Çıktı Sayısı (Batch Count):", fontSize = 12.sp, color = Color.Gray)
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     counts.forEach { c ->
@@ -268,27 +327,25 @@ fun MainScreen(
 
                                 Spacer(modifier = Modifier.height(12.dp))
 
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    Button(
-                                        onClick = {
-                                            if (service != null && !isGenerating) {
-                                                isGenerating = true
-                                                if (selectedModel.contains("veo")) {
-                                                    service.engine.generateVideo(testPrompt, selectedModel, selectedRatio) {
-                                                        isGenerating = false
-                                                    }
-                                                } else {
-                                                    service.engine.generateImage(testPrompt, selectedModel, selectedRatio, outputCount) {
-                                                        isGenerating = false
-                                                    }
+                                Button(
+                                    onClick = {
+                                        if (service != null && !isGenerating) {
+                                            isGenerating = true
+                                            if (selectedModel.contains("veo")) {
+                                                service.engine.generateVideo(testPrompt, selectedModel, selectedRatio) {
+                                                    isGenerating = false
+                                                }
+                                            } else {
+                                                service.engine.generateImage(testPrompt, selectedModel, selectedRatio, outputCount) {
+                                                    isGenerating = false
                                                 }
                                             }
-                                        },
-                                        enabled = !isGenerating,
-                                        modifier = Modifier.fillMaxWidth()
-                                    ) {
-                                        Text(if (isGenerating) "Üretiliyor..." else "Test Başlat ($selectedModel, $selectedRatio, ${outputCount}x)")
-                                    }
+                                        }
+                                    },
+                                    enabled = !isGenerating,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(if (isGenerating) "Üretiliyor..." else "Test Başlat ($selectedModel, $selectedRatio, ${outputCount}x)")
                                 }
                             }
                         }
