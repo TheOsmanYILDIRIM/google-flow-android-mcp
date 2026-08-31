@@ -1,15 +1,14 @@
 /**
- * Google Flow Android MCP Bridge (v3.0 - Desktop Playwright Engine Port)
- * Direct 1:1 port of GabrielGargiuloDev/google-flow-mcp
+ * Google Flow Android MCP Bridge (v3.1 - React Fiber & Props Direct Invocation)
+ * Directly invokes React onClick, onChange, onInput handlers from DOM nodes.
  */
 
 (function() {
     if (window.FlowBridgeInitialized) return;
     window.FlowBridgeInitialized = true;
 
-    console.log("[FlowBridge v3.0] Initializing Google Flow Desktop Port...");
+    console.log("[FlowBridge v3.1] Initializing React Fiber Engine...");
 
-    // Baseline UUID tracker to ensure we only capture newly generated images
     let baselineUuids = [];
 
     function captureBaselineUuids() {
@@ -23,55 +22,151 @@
         console.log("[FlowBridge] Baseline media captured:", baselineUuids.length);
     }
 
-    function forceClick(element) {
-        if (!element) return false;
-        element.removeAttribute('disabled');
-        element.disabled = false;
-        element.setAttribute('aria-disabled', 'false');
+    function getReactProps(domNode) {
+        if (!domNode) return null;
+        const key = Object.keys(domNode).find(k => 
+            k.startsWith('__reactProps$') || 
+            k.startsWith('__reactEventHandlers$') || 
+            k.startsWith('__reactFiber$')
+        );
+        return key ? domNode[key] : null;
+    }
 
-        ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(evtType => {
-            element.dispatchEvent(new MouseEvent(evtType, {
+    function triggerReactClick(domButton) {
+        if (!domButton) return false;
+
+        domButton.removeAttribute('disabled');
+        domButton.disabled = false;
+        domButton.setAttribute('aria-disabled', 'false');
+
+        // 1. Try direct React props onClick
+        const props = getReactProps(domButton);
+        if (props) {
+            if (typeof props.onClick === 'function') {
+                try {
+                    props.onClick({
+                        preventDefault: () => {},
+                        stopPropagation: () => {},
+                        target: domButton,
+                        currentTarget: domButton
+                    });
+                    console.log("[FlowBridge] Successfully triggered React props.onClick() directly!");
+                } catch (e) {
+                    console.warn("[FlowBridge] React onClick error:", e);
+                }
+            }
+            if (props.children && typeof props.children.onClick === 'function') {
+                try { props.children.onClick({}); } catch (e) {}
+            }
+        }
+
+        // 2. Dispatch Pointer & Mouse events
+        ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(evt => {
+            domButton.dispatchEvent(new MouseEvent(evt, {
                 bubbles: true,
                 cancelable: true,
                 view: window,
                 buttons: 1
             }));
         });
-        try { element.click(); } catch(e) {}
+
+        try { domButton.click(); } catch(e) {}
         return true;
     }
 
-    function ensureProject() {
-        if (window.location.href.includes('/project/')) {
-            return true;
+    function writePromptToContentEditable(div, text) {
+        div.focus();
+
+        // 1. Construct DOM structure with <p> inside contenteditable
+        div.innerHTML = `<p>${text}</p>`;
+
+        // 2. Trigger React props onInput / onChange directly
+        const props = getReactProps(div);
+        if (props) {
+            if (typeof props.onInput === 'function') {
+                try {
+                    props.onInput({
+                        target: div,
+                        currentTarget: div,
+                        preventDefault: () => {},
+                        stopPropagation: () => {}
+                    });
+                    console.log("[FlowBridge] Triggered React props.onInput()");
+                } catch(e) {}
+            }
+            if (typeof props.onChange === 'function') {
+                try {
+                    props.onChange({
+                        target: div,
+                        currentTarget: div,
+                        preventDefault: () => {},
+                        stopPropagation: () => {}
+                    });
+                } catch(e) {}
+            }
         }
 
-        // Try clicking New project button
-        const newBtn = Array.from(document.querySelectorAll('button, a')).find(b => {
-            const t = (b.textContent || '').trim().toLowerCase();
-            return t.includes('new project') || t.includes('nuovo progetto') || t.includes('nouveau projet') || t.includes('yeni proje') || t.includes('proje oluştur');
-        });
-
-        if (newBtn) {
-            forceClick(newBtn);
-            return true;
+        // 3. Dispatch native input events
+        try {
+            const inputEvt = new InputEvent('input', {
+                bubbles: true,
+                cancelable: true,
+                inputType: 'insertText',
+                data: text
+            });
+            div.dispatchEvent(inputEvt);
+        } catch(e) {
+            div.dispatchEvent(new Event('input', { bubbles: true }));
         }
 
-        // Try finding any existing project card
-        const projectLink = document.querySelector('a[href*="/project/"]');
-        if (projectLink) {
-            projectLink.click();
-            return true;
-        }
+        div.dispatchEvent(new Event('change', { bubbles: true }));
 
-        return false;
+        // 4. Selection set to end of text
+        try {
+            const selection = window.getSelection();
+            const range = document.createRange();
+            range.selectNodeContents(div);
+            range.collapse(false);
+            selection.removeAllRanges();
+            selection.addRange(range);
+        } catch(e) {}
+
+        return true;
     }
 
-    function switchToImageTab() {
-        const imageTab = document.querySelector('button[role="tab"][id*="trigger-IMAGE"], button[role="tab"]:has-text("Image"), button[role="tab"]:has-text("Resim")');
-        if (imageTab) {
-            forceClick(imageTab);
+    function findAndClickSubmit() {
+        const buttons = Array.from(document.querySelectorAll('button'));
+        
+        // Find button index with arrow_forward or Oluştur
+        const submitBtn = buttons.find(b => {
+            const txt = (b.textContent || '').trim();
+            const cls = (b.className || '');
+            return txt.includes('arrow_forward') || txt.includes('Oluştur') || txt.includes('Generate') || cls.includes('kmC');
+        });
+
+        if (submitBtn) {
+            console.log("[FlowBridge] Found submit button:", submitBtn.textContent);
+            triggerReactClick(submitBtn);
+            if (window.AndroidBridge) window.AndroidBridge.log("✓ Triggered submit button: " + submitBtn.textContent);
+            return true;
         }
+
+        // Fallback: Dispatch Enter on contenteditable
+        const promptDiv = document.querySelector('div[contenteditable="true"], textarea');
+        if (promptDiv) {
+            ['keydown', 'keypress', 'keyup'].forEach(evt => {
+                promptDiv.dispatchEvent(new KeyboardEvent(evt, {
+                    key: 'Enter',
+                    code: 'Enter',
+                    keyCode: 13,
+                    which: 13,
+                    ctrlKey: true,
+                    bubbles: true,
+                    cancelable: true
+                }));
+            });
+        }
+        return false;
     }
 
     function checkAgentConfirmation() {
@@ -81,90 +176,9 @@
             return t.includes('accepter') || t.includes('approve') || t.includes('approva') || t.includes('onayla') || t.includes('kabul et');
         });
         if (confirmBtn) {
-            console.log("[FlowBridge] Agent confirmation dialog detected, approving:", confirmBtn.textContent);
-            forceClick(confirmBtn);
+            console.log("[FlowBridge] Auto-confirming agent dialog:", confirmBtn.textContent);
+            triggerReactClick(confirmBtn);
             return true;
-        }
-        return false;
-    }
-
-    function setPromptText(prompt, isVideo, model, duration) {
-        // Find contenteditable div or textarea (Agent bar)
-        let promptInput = document.querySelector('[contenteditable="true"]:not([aria-hidden="true"])') ||
-                          document.querySelector('div[contenteditable="true"]') ||
-                          document.querySelector('textarea:not([aria-hidden="true"])') ||
-                          document.querySelector('textarea');
-
-        if (!promptInput) {
-            return false;
-        }
-
-        promptInput.focus();
-
-        // GabrielGargiuloDev Imperative Prompt Formulation
-        let imperativePrompt = "";
-        if (isVideo) {
-            imperativePrompt = `Genera subito un video di ${duration || '4s'} con il modello ${model || 'Veo 3.1'}, senza farmi domande e senza chiedere chiarimenti. Attieniti FEDELMENTE a questa descrizione: includi TUTTI gli elementi, soggetti, azioni e dettagli indicati, non aggiungere nulla che non sia richiesto e non omettere nulla. Descrizione: ${prompt}`;
-        } else {
-            imperativePrompt = `Genera subito un'immagine, senza farmi domande e senza chiedere chiarimenti. Attieniti FEDELMENTE a questa descrizione: includi TUTTI gli elementi, soggetti e dettagli indicati, non aggiungere nulla che non sia richiesto e non omettere nulla. Descrizione: ${prompt}`;
-        }
-
-        // Selection clear & execCommand
-        if (promptInput.isContentEditable || promptInput.getAttribute('contenteditable') === 'true') {
-            const selection = window.getSelection();
-            const range = document.createRange();
-            range.selectNodeContents(promptInput);
-            selection.removeAllRanges();
-            selection.addRange(range);
-
-            document.execCommand('delete', false, null);
-
-            try {
-                promptInput.dispatchEvent(new InputEvent('beforeinput', {
-                    bubbles: true,
-                    cancelable: true,
-                    inputType: 'insertText',
-                    data: imperativePrompt
-                }));
-            } catch(e) {}
-
-            document.execCommand('insertText', false, imperativePrompt);
-
-            if (!promptInput.textContent.includes(imperativePrompt)) {
-                promptInput.textContent = imperativePrompt;
-            }
-
-            promptInput.dispatchEvent(new Event('input', { bubbles: true }));
-            promptInput.dispatchEvent(new Event('change', { bubbles: true }));
-        } else {
-            promptInput.value = imperativePrompt;
-            promptInput.dispatchEvent(new Event('input', { bubbles: true }));
-            promptInput.dispatchEvent(new Event('change', { bubbles: true }));
-        }
-
-        return true;
-    }
-
-    function submitGeneration() {
-        const buttons = Array.from(document.querySelectorAll('button'));
-        
-        // Exact GabrielGargiuloDev selector: button containing material icon 'arrow_forward'
-        let submitBtn = buttons.find(b => {
-            const txt = (b.textContent || '').trim();
-            return txt.includes('arrow_forward') || txt.includes('Oluştur') || txt.includes('Generate') || txt.includes('Create');
-        });
-
-        if (submitBtn) {
-            console.log("[FlowBridge] Found submit button:", submitBtn.textContent);
-            forceClick(submitBtn);
-            if (window.AndroidBridge) window.AndroidBridge.log("✓ Clicked submit button: " + submitBtn.textContent);
-            return true;
-        }
-
-        // Fallback: Dispatched Enter
-        const promptInput = document.querySelector('[contenteditable="true"], textarea');
-        if (promptInput) {
-            promptInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, ctrlKey: true, bubbles: true }));
         }
         return false;
     }
@@ -172,7 +186,6 @@
     function pollForOutput(taskId, mediaType, timeoutMs) {
         const startTime = Date.now();
         const checkInterval = setInterval(() => {
-            // Check for agent confirmation every tick
             checkAgentConfirmation();
 
             const foundUuids = [];
@@ -190,7 +203,7 @@
             if (foundUuids.length > 0) {
                 clearInterval(checkInterval);
                 const mediaUrl = `https://labs.google/fx/api/trpc/media.getMediaUrlRedirect?name=${foundUuids[0]}`;
-                console.log("[FlowBridge] Generated media UUID detected:", foundUuids[0]);
+                console.log("[FlowBridge] New Generated Media UUID:", foundUuids[0]);
                 if (window.AndroidBridge) {
                     window.AndroidBridge.onGenerationCompleted(taskId, mediaUrl, JSON.stringify({
                         uuids: foundUuids,
@@ -226,7 +239,7 @@
                 url: window.location.href,
                 isLoggedIn: this.checkAuth(),
                 credits: "Active",
-                supportedModels: ["Nano Banana 2", "Nano Banana", "Veo 3.1 - Fast", "Veo 3.1 - Quality", "Omni Flash"],
+                supportedModels: ["Nano Banana 2", "Nano Banana", "Veo 3.1 - Fast", "Veo 3.1 - Quality"],
                 supportedAspectRatios: ["1:1", "16:9", "9:16", "4:3", "3:4", "2:3", "3:2"],
                 maxOutputsCount: 4,
                 timestamp: Date.now()
@@ -288,26 +301,29 @@
         generateImage: function(taskId, prompt, optionsJson) {
             console.log("[FlowBridge] generateImage task:", taskId, prompt);
             try {
-                const options = optionsJson ? JSON.parse(optionsJson) : {};
-                const model = options.model || "Nano Banana 2";
-
-                ensureProject();
-                switchToImageTab();
                 captureBaselineUuids();
 
-                const filled = setPromptText(prompt, false, model);
-                if (!filled) {
-                    if (window.AndroidBridge) window.AndroidBridge.onError(taskId, "Could not find prompt input field");
+                const promptDiv = Array.from(document.querySelectorAll('div[contenteditable="true"]')).find(d => 
+                    d.isContentEditable || (d.textContent && (d.textContent.includes('Ne oluşturmak') || d.textContent.includes('want to create')))
+                ) || document.querySelector('div[contenteditable="true"], textarea');
+
+                if (!promptDiv) {
+                    if (window.AndroidBridge) window.AndroidBridge.onError(taskId, "Prompt box not found");
                     return false;
                 }
 
-                // Wait 400ms then click submit
+                // Construct imperative prompt for Flow agent
+                const imperativePrompt = `Genera subito un'immagine, senza farmi domande e senza chiedere chiarimenti. Attieniti FEDELMENTE a questa descrizione: includi TUTTI gli elementi, soggetti e dettagli indicati, non aggiungere nulla che non sia richiesto e non omettere nulla. Descrizione: ${prompt}`;
+
+                writePromptToContentEditable(promptDiv, imperativePrompt);
+
+                // Multi-stage trigger sequence (0ms, 300ms, 700ms)
+                setTimeout(() => { findAndClickSubmit(); }, 200);
+                setTimeout(() => { findAndClickSubmit(); }, 500);
                 setTimeout(() => {
-                    submitGeneration();
-                    // Additional trigger after 800ms to ensure click registers
-                    setTimeout(() => { submitGeneration(); }, 800);
+                    findAndClickSubmit();
                     pollForOutput(taskId, 'image', 240000);
-                }, 400);
+                }, 900);
 
                 return true;
             } catch (err) {
@@ -323,20 +339,24 @@
                 const model = options.model || "Veo 3.1 - Fast";
                 const duration = options.duration || "4s";
 
-                ensureProject();
                 captureBaselineUuids();
 
-                const filled = setPromptText(prompt, true, model, duration);
-                if (!filled) {
-                    if (window.AndroidBridge) window.AndroidBridge.onError(taskId, "Could not find prompt input field");
+                const promptDiv = document.querySelector('div[contenteditable="true"], textarea');
+                if (!promptDiv) {
+                    if (window.AndroidBridge) window.AndroidBridge.onError(taskId, "Prompt box not found");
                     return false;
                 }
 
+                const imperativePrompt = `Genera subito un video di ${duration} con il modello ${model}, senza farmi domande e senza chiedere chiarimenti. Attieniti FEDELMENTE a questa descrizione: includi TUTTI gli elementi, soggetti, azioni e dettagli indicati, non aggiungere nulla che non sia richiesto e non omettere nulla. Descrizione: ${prompt}`;
+
+                writePromptToContentEditable(promptDiv, imperativePrompt);
+
+                setTimeout(() => { findAndClickSubmit(); }, 200);
+                setTimeout(() => { findAndClickSubmit(); }, 600);
                 setTimeout(() => {
-                    submitGeneration();
-                    setTimeout(() => { submitGeneration(); }, 800);
+                    findAndClickSubmit();
                     pollForOutput(taskId, 'video', 480000);
-                }, 400);
+                }, 1000);
 
                 return true;
             } catch (err) {
@@ -350,5 +370,5 @@
         window.FlowAutomation.checkAuth();
     }, 5000);
 
-    console.log("[FlowBridge v3.0] Ready.");
+    console.log("[FlowBridge v3.1] Ready.");
 })();
