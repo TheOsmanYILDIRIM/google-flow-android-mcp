@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Google Flow MCP - Termux CLI Controller (v2.0)
-Supports Nano Banana 2, Veo 3.1, Aspect Ratios (1:1, 16:9, 9:16), Multi-Output (1x-4x), and Projects.
+Google Flow MCP - Termux CLI Controller (v2.1)
+Supports Nano Banana 2, Veo 3.1, Aspect Ratios, Multi-Outputs, and Cookie/Session Injection.
 """
 
 import sys
@@ -17,7 +17,7 @@ def check_status():
     try:
         res = requests.get(f"{BASE_URL}/api/status", timeout=5)
         data = res.json()
-        print("=== Google Flow MCP Status (v2.0) ===")
+        print("=== Google Flow MCP Status (v2.1) ===")
         print(f"Status:            {data.get('status')}")
         print(f"Auth State:        {'✓ Logged In (Ready)' if data.get('isLoggedIn') else '⚠️ Needs Login'}")
         print(f"Supported Models:  {', '.join(data.get('supportedModels', []))}")
@@ -28,6 +28,18 @@ def check_status():
     except Exception as e:
         print(f"❌ Error connecting to Flow Android App: {e}")
         print("Make sure Google Flow MCP app is running on your phone.")
+
+def import_cookies(cookies: str):
+    try:
+        res = requests.post(f"{BASE_URL}/api/cookies", json={"cookies": cookies}, timeout=5)
+        data = res.json()
+        if data.get("success"):
+            print("✓ Cookies successfully injected into Android App WebView!")
+            print("Flow page reloaded with authenticated session.")
+        else:
+            print(f"❌ Failed: {data.get('error')}")
+    except Exception as e:
+        print(f"❌ Error importing cookies: {e}")
 
 def list_projects():
     try:
@@ -121,11 +133,15 @@ def generate_video(prompt: str, model: str = "veo-3.1", aspect_ratio: str = "16:
         print(f"❌ Request error: {e}")
 
 def main():
-    parser = argparse.ArgumentParser(description="Google Flow Android MCP CLI Controller (v2.0)")
+    parser = argparse.ArgumentParser(description="Google Flow Android MCP CLI Controller (v2.1)")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     # status
     subparsers.add_parser("status", help="Check Flow MCP app and login status")
+
+    # cookies
+    cookie_parser = subparsers.add_parser("import-cookies", help="Inject session cookies into Android App")
+    cookie_parser.add_argument("cookies", help="Cookie string (e.g. 'SID=...; SSID=...')")
 
     # projects
     subparsers.add_parser("projects", help="List user projects in Flow")
@@ -160,6 +176,8 @@ def main():
 
     if args.command == "status":
         check_status()
+    elif args.command == "import-cookies":
+        import_cookies(args.cookies)
     elif args.command == "projects":
         list_projects()
     elif args.command == "create-project":

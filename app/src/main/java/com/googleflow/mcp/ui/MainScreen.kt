@@ -35,6 +35,10 @@ fun MainScreen(
     var selectedTab by remember { mutableIntStateOf(0) }
     val logs = remember { mutableStateListOf<String>() }
 
+    // Cookie import dialog state
+    var showCookieDialog by remember { mutableStateOf(false) }
+    var cookieInput by remember { mutableStateOf("") }
+
     // Generation Controls
     var testPrompt by remember { mutableStateOf("A cinematic retro cyberpunk street, neon lights, 8k") }
     var selectedModel by remember { mutableStateOf("nano-banana-2") }
@@ -56,6 +60,48 @@ fun MainScreen(
         }
     }
 
+    if (showCookieDialog) {
+        AlertDialog(
+            onDismissRequest = { showCookieDialog = false },
+            title = { Text("Cookie / Oturum İçe Aktar", fontWeight = FontWeight.Bold) },
+            text = {
+                Column {
+                    Text(
+                        "Normal tarayıcınızdan aldığınız 'labs.google' çerezlerini buraya yapıştırarak Google oturumunu anında aktarabilirsiniz:",
+                        fontSize = 13.sp,
+                        color = Color.LightGray
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = cookieInput,
+                        onValueChange = { cookieInput = it },
+                        placeholder = { Text("SID=...; HSID=...; SSID=...") },
+                        modifier = Modifier.fillMaxWidth().height(140.dp),
+                        maxLines = 6
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (cookieInput.isNotBlank()) {
+                            service?.engine?.importCookies(cookieInput)
+                            showCookieDialog = false
+                            cookieInput = ""
+                        }
+                    }
+                ) {
+                    Text("Oturumu Yükle")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCookieDialog = false }) {
+                    Text("İptal")
+                }
+            }
+        )
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -68,19 +114,17 @@ fun MainScreen(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Column {
-                            Text("Google Flow MCP v2.0", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                            Text("127.0.0.1:8765 | ${if (authState) "Ready" else "Giriş Bekleniyor ⚠️"}", style = MaterialTheme.typography.bodySmall, color = if (authState) Color(0xFF34A853) else Color(0xFFFBBC05))
+                            Text("Google Flow MCP v2.1", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                            Text("127.0.0.1:8765 | ${if (authState) "Ready ✓" else "Giriş Bekleniyor ⚠️"}", style = MaterialTheme.typography.bodySmall, color = if (authState) Color(0xFF34A853) else Color(0xFFFBBC05))
                         }
                     }
                 },
                 actions = {
-                    IconButton(onClick = {
-                        service?.engine?.loadLoginUrl()
-                    }) {
+                    IconButton(onClick = { showCookieDialog = true }) {
                         Icon(
-                            imageVector = Icons.Default.AccountCircle,
-                            contentDescription = "Google Giriş Sayfası",
-                            tint = Color(0xFF8AB4F8)
+                            imageVector = Icons.Default.Key,
+                            contentDescription = "Cookie Import",
+                            tint = Color(0xFFFBBC05)
                         )
                     }
                     IconButton(onClick = {
@@ -162,7 +206,16 @@ fun MainScreen(
                                 ) {
                                     Icon(Icons.Default.Login, contentDescription = null, modifier = Modifier.size(16.dp))
                                     Spacer(modifier = Modifier.width(4.dp))
-                                    Text("Google Oturum Aç", fontSize = 12.sp)
+                                    Text("Safari UA Giriş", fontSize = 12.sp)
+                                }
+                                Button(
+                                    onClick = { showCookieDialog = true },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFBBC05)),
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                                ) {
+                                    Icon(Icons.Default.Key, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Cookie Yapıştır", color = Color.Black, fontSize = 12.sp)
                                 }
                                 Button(
                                     onClick = { service?.engine?.loadFlowUrl() },
@@ -171,7 +224,7 @@ fun MainScreen(
                                 ) {
                                     Icon(Icons.Default.Home, contentDescription = null, modifier = Modifier.size(16.dp))
                                     Spacer(modifier = Modifier.width(4.dp))
-                                    Text("Flow'a Dön", fontSize = 12.sp)
+                                    Text("Flow Yenile", fontSize = 12.sp)
                                 }
                             }
                         }
@@ -232,7 +285,7 @@ fun MainScreen(
                             modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
                         ) {
                             Column(modifier = Modifier.padding(16.dp)) {
-                                Text("MCP Sunucu & Durum", fontWeight = FontWeight.Bold, color = Color.White)
+                                Text("MCP Sunucu & Giriş Seçenekleri", fontWeight = FontWeight.Bold, color = Color.White)
                                 Spacer(modifier = Modifier.height(8.dp))
                                 Text("• Endpoint: http://127.0.0.1:8765/sse", color = Color(0xFF8AB4F8), fontFamily = FontFamily.Monospace)
                                 Text("• Modeller: Nano Banana 2 & Veo 3.1", color = Color(0xFF81C995))
@@ -241,11 +294,11 @@ fun MainScreen(
                                 Spacer(modifier = Modifier.height(12.dp))
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     Button(
-                                        onClick = { service?.engine?.loadLoginUrl() },
-                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4285F4)),
+                                        onClick = { showCookieDialog = true },
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFBBC05)),
                                         modifier = Modifier.weight(1f)
                                     ) {
-                                        Text("Google Giriş", fontSize = 13.sp)
+                                        Text("Cookie Yapıştır", color = Color.Black, fontSize = 12.sp)
                                     }
                                     Button(
                                         onClick = { service?.attachTo1x1Overlay() },
@@ -254,7 +307,7 @@ fun MainScreen(
                                     ) {
                                         Icon(Icons.Default.Minimize, contentDescription = null)
                                         Spacer(modifier = Modifier.width(4.dp))
-                                        Text("1x1 Arka Plan", fontSize = 13.sp)
+                                        Text("1x1 Arka Plan", fontSize = 12.sp)
                                     }
                                 }
                             }

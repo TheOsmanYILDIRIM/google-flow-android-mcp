@@ -73,6 +73,22 @@ class FlowMcpServer(private val engine: FlowScraperEngine, private val port: Int
                     call.respond(response)
                 }
 
+                // Cookie Import Endpoint (Allows Termux or user to inject session cookies directly)
+                post("/api/cookies") {
+                    val req = try {
+                        gson.fromJson(call.receiveText(), JsonObject::class.java)
+                    } catch (e: Exception) {
+                        null
+                    }
+                    val cookies = req?.get("cookies")?.asString ?: ""
+                    if (cookies.isNotEmpty()) {
+                        engine.importCookies(cookies)
+                        call.respond(mapOf("success" to true, "message" to "Cookies imported successfully"))
+                    } else {
+                        call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Empty cookies parameter"))
+                    }
+                }
+
                 post("/mcp") {
                     val body = call.receiveText()
                     val jsonRpc = try {
@@ -95,7 +111,7 @@ class FlowMcpServer(private val engine: FlowScraperEngine, private val port: Int
                                 addProperty("protocolVersion", "2024-11-05")
                                 val serverInfo = JsonObject().apply {
                                     addProperty("name", "google-flow-android-mcp")
-                                    addProperty("version", "2.0.0")
+                                    addProperty("version", "2.1.0")
                                 }
                                 add("serverInfo", serverInfo)
                                 val capabilities = JsonObject().apply {
@@ -129,7 +145,6 @@ class FlowMcpServer(private val engine: FlowScraperEngine, private val port: Int
                     }
                 }
 
-                // REST API direct endpoints
                 post("/api/generate") {
                     val req = try {
                         gson.fromJson(call.receiveText(), JsonObject::class.java)
@@ -306,28 +321,28 @@ class FlowMcpServer(private val engine: FlowScraperEngine, private val port: Int
         })
 
         list.add(JsonObject().apply {
+            addProperty("name", "flow_import_cookies")
+            addProperty("description", "Imports session cookies into Google Flow WebView to bypass login prompts")
+            add("inputSchema", JsonObject().apply {
+                addProperty("type", "object")
+                val props = JsonObject().apply {
+                    add("cookies", JsonObject().apply {
+                        addProperty("type", "string")
+                        addProperty("description", "Raw Cookie header string or cookie values separated by semicolons")
+                    })
+                }
+                add("properties", props)
+                val req = JsonArray().apply { add("cookies") }
+                add("required", req)
+            })
+        })
+
+        list.add(JsonObject().apply {
             addProperty("name", "flow_list_projects")
             addProperty("description", "Lists all user projects and folders in Google Flow")
             add("inputSchema", JsonObject().apply {
                 addProperty("type", "object")
                 add("properties", JsonObject())
-            })
-        })
-
-        list.add(JsonObject().apply {
-            addProperty("name", "flow_create_project")
-            addProperty("description", "Creates a new category/project workspace in Google Flow")
-            add("inputSchema", JsonObject().apply {
-                addProperty("type", "object")
-                val props = JsonObject().apply {
-                    add("name", JsonObject().apply {
-                        addProperty("type", "string")
-                        addProperty("description", "Name of the new project")
-                    })
-                }
-                add("properties", props)
-                val req = JsonArray().apply { add("name") }
-                add("required", req)
             })
         })
 
@@ -344,6 +359,11 @@ class FlowMcpServer(private val engine: FlowScraperEngine, private val port: Int
                 val auth = engine.bridge.authState.value
                 val url = engine.bridge.currentUrl.value
                 textObj.addProperty("text", "Status: ${if (auth) "Logged In & Ready" else "Needs Login"}\nURL: $url\nModels: Nano Banana 2, Veo 3.1\nMax Batch Count: 4x")
+            }
+            "flow_import_cookies" -> {
+                val cookies = args.get("cookies")?.asString ?: ""
+                engine.importCookies(cookies)
+                textObj.addProperty("text", "Cookies imported successfully.")
             }
             "flow_generate_image" -> {
                 val prompt = args.get("prompt")?.asString ?: ""
@@ -376,11 +396,6 @@ class FlowMcpServer(private val engine: FlowScraperEngine, private val port: Int
                 var projects = "[]"
                 engine.listProjects { projects = it }
                 textObj.addProperty("text", projects)
-            }
-            "flow_create_project" -> {
-                val name = args.get("name")?.asString ?: "Project"
-                engine.createProject(name)
-                textObj.addProperty("text", "Project creation requested: $name")
             }
             else -> {
                 textObj.addProperty("text", "Unknown tool: $toolName")

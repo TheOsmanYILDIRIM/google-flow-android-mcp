@@ -37,9 +37,12 @@ class FlowScraperEngine(private val context: Context) {
 
     val flowUrl = "https://labs.google/fx/"
     val loginUrl = "https://accounts.google.com/ServiceLogin?continue=https%3A%2F%2Flabs.google%2Ffx%2F"
-    
-    // Clean Chrome Desktop User Agent without 'wv' or 'Version/4.0'
-    private val cleanDesktopUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+
+    // Safari Desktop User Agent: Google OAuth does not block Safari macOS User Agents
+    val safariUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15"
+    val chromeUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
+
+    var currentUserAgent = safariUserAgent
 
     @SuppressLint("SetJavaScriptEnabled")
     fun attachWebView(view: WebView) {
@@ -54,7 +57,7 @@ class FlowScraperEngine(private val context: Context) {
             domStorageEnabled = true
             databaseEnabled = true
             mediaPlaybackRequiresUserGesture = false
-            userAgentString = cleanDesktopUserAgent
+            userAgentString = currentUserAgent
             cacheMode = WebSettings.LOAD_DEFAULT
             mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
             setSupportMultipleWindows(true)
@@ -65,13 +68,12 @@ class FlowScraperEngine(private val context: Context) {
             allowContentAccess = true
         }
 
-        // Strip X-Requested-With header to prevent Google from blocking embedded login
         if (WebViewFeature.isFeatureSupported(WebViewFeature.REQUESTED_WITH_HEADER_ALLOW_LIST)) {
             try {
                 WebSettingsCompat.setRequestedWithHeaderOriginAllowList(view.settings, emptySet())
-                bridge.log("Successfully stripped X-Requested-With header.")
+                bridge.log("X-Requested-With header stripped.")
             } catch (e: Exception) {
-                bridge.log("Could not set RequestedWithHeader allow list: ${e.message}")
+                bridge.log("RequestedWith error: ${e.message}")
             }
         }
 
@@ -86,18 +88,17 @@ class FlowScraperEngine(private val context: Context) {
 
             override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
                 super.onPageStarted(view, url, favicon)
-                bridge.log("Page started: $url")
+                bridge.log("Loading: $url")
             }
 
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
                 cookieManager.flush()
-                bridge.log("Page finished: $url")
+                bridge.log("Loaded: $url")
                 injectBridgeScript()
             }
         }
 
-        // Handle Google Login popups and redirects cleanly inside the same WebView
         view.webChromeClient = object : WebChromeClient() {
             override fun onCreateWindow(
                 view: WebView?,
@@ -107,7 +108,7 @@ class FlowScraperEngine(private val context: Context) {
             ): Boolean {
                 val newWebView = WebView(context).apply {
                     settings.javaScriptEnabled = true
-                    settings.userAgentString = cleanDesktopUserAgent
+                    settings.userAgentString = currentUserAgent
                     settings.domStorageEnabled = true
                     val cm = CookieManager.getInstance()
                     cm.setAcceptCookie(true)
@@ -130,6 +131,33 @@ class FlowScraperEngine(private val context: Context) {
         }
 
         view.loadUrl(flowUrl)
+    }
+
+    fun switchUserAgent(ua: String) {
+        currentUserAgent = ua
+        mainHandler.post {
+            webView?.settings?.userAgentString = ua
+            webView?.reload()
+            bridge.log("Switched User-Agent to: $ua")
+        }
+    }
+
+    fun importCookies(cookieString: String) {
+        val cookieManager = CookieManager.getInstance()
+        val cookies = cookieString.split(";")
+        for (rawCookie in cookies) {
+            val cookie = rawCookie.trim()
+            if (cookie.isNotEmpty()) {
+                cookieManager.setCookie("https://labs.google", cookie)
+                cookieManager.setCookie("https://accounts.google.com", cookie)
+                cookieManager.setCookie("https://google.com", cookie)
+            }
+        }
+        cookieManager.flush()
+        mainHandler.post {
+            webView?.loadUrl(flowUrl)
+            bridge.log("Imported ${cookies.size} cookies and reloaded Flow.")
+        }
     }
 
     fun loadLoginUrl() {
