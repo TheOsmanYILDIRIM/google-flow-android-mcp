@@ -1,0 +1,63 @@
+name: Build & Release Google Flow MCP APK
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: Grant Execute Permission for Gradlew
+        run: chmod +x gradlew
+
+      - name: Build Android Release APK
+        run: ./gradlew assembleRelease --stacktrace
+
+      - name: Collect Output APK
+        run: |
+          mkdir -p build-output
+          find app/build/outputs/apk/ -name "*.apk" -exec cp {} build-output/GoogleFlowMCP-Release.apk \;
+          ls -la build-output/
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: GoogleFlowMCP-APK
+          path: build-output/GoogleFlowMCP-Release.apk
+
+      - name: Create or Update GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.0
+          name: "Google Flow Android MCP v1.0.0 (Release)"
+          body: |
+            ### 🌊 Google Flow Android MCP Server & Background Automation App (v1.0.0)
+
+            Google Flow (Imagen & Veo AI) browser automation and MCP server running natively on Android with 1x1 floating background overlay.
+
+            #### 🚀 Highlights:
+            - **Google Login via Native WebView:** Zero token/password sharing. Direct 2FA/Passkey support.
+            - **1x1 Invisible Floating Overlay:** Keeps WebView active in background without OS throttling.
+            - **Embedded Ktor MCP Server:** Listening on `http://127.0.0.1:8765/sse` for Antigravity & Claude Code CLI.
+            - **Termux Batch Pipeline:** Full automation scripts to batch-process 64+ images with reference conditioning.
+            - **Veo & Imagen Support:** Tools for `flow_generate_image`, `flow_generate_video`, `flow_generate_image_with_references`.
+          files: build-output/GoogleFlowMCP-Release.apk
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
