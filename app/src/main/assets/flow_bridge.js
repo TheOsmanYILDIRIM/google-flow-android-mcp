@@ -1,60 +1,43 @@
 /**
- * Google Flow & FX Suite Automation Bridge & Scraper (v2.4)
- * Comprehensive DOM Inspector, Multi-Language Landing Auto-Enter,
- * and Full Page Structure Dumper.
+ * Google Flow & FX Suite Automation Bridge & Scraper (v2.5)
+ * Built with EXACT verified DOM architecture from live Google Flow Studio.
  */
 
 (function() {
     if (window.FlowBridgeInitialized) return;
     window.FlowBridgeInitialized = true;
 
-    console.log("[FlowBridge] Initializing Google Flow Bridge v2.4...");
+    console.log("[FlowBridge] Initializing Google Flow Bridge v2.5 (Verified Selectors)...");
 
     const SELECTORS = {
-        promptInputs: [
-            'textarea[placeholder*="prompt" i]',
-            'textarea[placeholder*="describe" i]',
-            'textarea[placeholder*="image" i]',
-            'textarea[placeholder*="video" i]',
-            'textarea[placeholder*="tarif" i]',
-            'textarea[placeholder*="açıkla" i]',
+        promptDivs: [
             'div[contenteditable="true"]',
             'div[role="textbox"]',
-            'textarea',
-            'input[type="text"]',
-            '[data-testid="prompt-input"]',
-            '.prompt-input',
-            '[aria-label*="prompt" i]'
+            'textarea[placeholder*="Ne oluşturmak" i]',
+            'textarea[placeholder*="want to create" i]',
+            'textarea'
         ],
         generateButtons: [
-            'button[aria-label*="generate" i]',
-            'button[aria-label*="create" i]',
-            'button[aria-label*="üret" i]',
-            'button[aria-label*="oluştur" i]',
+            'button:contains("Oluştur")',
+            'button:contains("arrow_forward")',
             'button:contains("Generate")',
             'button:contains("Create")',
-            'button:contains("Üret")',
-            'button:contains("Oluştur")',
-            'button:contains("Try in Google Flow")',
-            'button:contains("Google Flow\'da Deneyin")',
-            'button:has(svg)',
-            '[data-testid="generate-button"]'
+            'button[aria-label*="Oluştur" i]',
+            'button[aria-label*="Generate" i]',
+            'button[aria-label*="Create" i]'
         ],
-        landingTryButtons: [
-            'button:contains("Try in Google Flow")',
-            'button:contains("Google Flow\'da Deneyin")',
-            'a:contains("Try in Google Flow")',
-            'a:contains("Google Flow\'da Deneyin")',
-            'button:contains("Deneyin")',
-            'button:contains("Try")'
+        modelSettingsButton: [
+            'button:contains("Nano Banana")',
+            'button:contains("Veo")',
+            'button:contains("🍌")',
+            'button:contains("crop_square")'
         ],
-        userProfile: [
-            'button[aria-label*="Google Account" i]',
-            'button[aria-label*="Google Hesabı" i]',
-            'img[alt*="Google Account" i]',
-            'img[alt*="Google Hesabı" i]',
-            '[data-testid="user-profile"]',
-            'button[aria-label*="Account" i]'
+        mediaOutputs: [
+            'img[src*="media.getMediaUrlRedirect"]',
+            'video[src*="media.getMediaUrlRedirect"]',
+            'img[alt*="Üretilmiş resim" i]',
+            'img[alt*="Generated image" i]',
+            'a[download]'
         ]
     };
 
@@ -64,12 +47,7 @@
                 if (selector.includes(':contains(')) {
                     const text = selector.match(/:contains\("([^"]+)"\)/)[1];
                     const elements = Array.from(document.querySelectorAll('button, span, div, a, p'));
-                    const found = elements.find(el => el.textContent && el.textContent.trim().toLowerCase().includes(text.toLowerCase()));
-                    if (found) return found;
-                } else if (selector.includes(':has(')) {
-                    const childTag = selector.match(/:has\(([^)]+)\)/)[1];
-                    const elements = Array.from(document.querySelectorAll('button, div[role="button"]'));
-                    const found = elements.find(el => el.querySelector(childTag));
+                    const found = elements.find(el => el.textContent && el.textContent.includes(text));
                     if (found) return found;
                 } else {
                     const el = document.querySelector(selector);
@@ -80,50 +58,166 @@
         return null;
     }
 
-    function triggerReactInput(element, text) {
-        element.focus();
+    function setPromptText(text) {
+        // 1. Look for contenteditable DIV
+        let promptEl = Array.from(document.querySelectorAll('div[contenteditable="true"]')).find(d => 
+            d.isContentEditable || (d.textContent && (d.textContent.includes('Ne oluşturmak') || d.textContent.includes('want to create')))
+        ) || document.querySelector('div[contenteditable="true"]');
 
-        if (element.tagName.toLowerCase() === 'textarea' || element.tagName.toLowerCase() === 'input') {
-            const proto = element.tagName.toLowerCase() === 'textarea' 
-                ? window.HTMLTextAreaElement.prototype 
-                : window.HTMLInputElement.prototype;
-
-            const nativeSetter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
-            if (nativeSetter) {
-                nativeSetter.call(element, text);
-            } else {
-                element.value = text;
-            }
-
-            element.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
-            element.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
-            element.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text }));
-        } else if (element.isContentEditable || element.getAttribute('contenteditable') === 'true') {
-            element.focus();
-            try {
-                document.execCommand('selectAll', false, null);
-                document.execCommand('insertText', false, text);
-            } catch (e) {
-                element.textContent = text;
-            }
-            element.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
-            element.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text }));
+        if (!promptEl) {
+            promptEl = document.querySelector('textarea, input[type="text"]');
         }
 
-        element.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', charCode: 13, keyCode: 13, bubbles: true }));
-        element.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', code: 'Enter', charCode: 13, keyCode: 13, bubbles: true }));
+        if (!promptEl) return false;
+
+        promptEl.focus();
+
+        if (promptEl.isContentEditable || promptEl.getAttribute('contenteditable') === 'true') {
+            // Select all contents and replace with text
+            const selection = window.getSelection();
+            const range = document.createRange();
+            range.selectNodeContents(promptEl);
+            selection.removeAllRanges();
+            selection.addRange(range);
+
+            document.execCommand('delete', false, null);
+            document.execCommand('insertText', false, text);
+
+            if (!promptEl.textContent.includes(text)) {
+                promptEl.textContent = text;
+            }
+
+            promptEl.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
+            promptEl.dispatchEvent(new InputEvent('input', {
+                bubbles: true,
+                cancelable: true,
+                inputType: 'insertText',
+                data: text
+            }));
+            promptEl.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
+        } else {
+            const proto = promptEl.tagName.toLowerCase() === 'textarea'
+                ? window.HTMLTextAreaElement.prototype
+                : window.HTMLInputElement.prototype;
+            const nativeSetter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+            if (nativeSetter) nativeSetter.call(promptEl, text);
+            else promptEl.value = text;
+
+            promptEl.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
+            promptEl.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
+        }
+
+        // Dispatch keyboard events
+        promptEl.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', bubbles: true }));
+        promptEl.dispatchEvent(new KeyboardEvent('keyup', { key: 'a', bubbles: true }));
+
+        return true;
+    }
+
+    function clickGenerateButton() {
+        const buttons = Array.from(document.querySelectorAll('button'));
+        
+        // Exact match for "arrow_forwardOluştur" or "Oluştur" / "Generate"
+        let genBtn = buttons.find(b => {
+            const txt = (b.textContent || '').trim();
+            return (txt.includes('Oluştur') && txt.includes('arrow_forward')) || 
+                   txt === 'arrow_forwardOluştur' || 
+                   txt.includes('Generate') || 
+                   txt.includes('Create');
+        });
+
+        if (!genBtn) {
+            genBtn = buttons.find(b => {
+                const txt = (b.textContent || '').trim();
+                return txt.includes('Oluştur') || txt.includes('arrow_forward');
+            });
+        }
+
+        if (genBtn) {
+            genBtn.removeAttribute('disabled');
+            genBtn.disabled = false;
+            genBtn.click();
+            if (window.AndroidBridge) {
+                window.AndroidBridge.log("✓ Generate button clicked: " + genBtn.textContent.trim());
+            }
+            return true;
+        }
+
+        // Fallback: Dispatched Ctrl+Enter
+        const promptEl = document.querySelector('div[contenteditable="true"], textarea');
+        if (promptEl) {
+            promptEl.dispatchEvent(new KeyboardEvent('keydown', {
+                key: 'Enter',
+                code: 'Enter',
+                keyCode: 13,
+                which: 13,
+                ctrlKey: true,
+                bubbles: true
+            }));
+            if (window.AndroidBridge) {
+                window.AndroidBridge.log("Dispatched Ctrl+Enter fallback.");
+            }
+            return true;
+        }
+
+        return false;
+    }
+
+    function applyModelSettings(model, aspectRatio, count) {
+        const settingsBtn = Array.from(document.querySelectorAll('button')).find(b => {
+            const txt = (b.textContent || '');
+            return txt.includes('Nano Banana') || txt.includes('Veo') || txt.includes('🍌') || txt.includes('crop_square');
+        });
+
+        if (settingsBtn) {
+            settingsBtn.click();
+            setTimeout(() => {
+                const options = Array.from(document.querySelectorAll('button, div[role="menuitem"], div[role="radio"], span'));
+                
+                // Model selection
+                if (model) {
+                    const mOption = options.find(o => o.textContent && o.textContent.toLowerCase().includes(model.toLowerCase()));
+                    if (mOption) mOption.click();
+                }
+
+                // Ratio selection
+                if (aspectRatio) {
+                    const rOption = options.find(o => o.textContent && o.textContent.includes(aspectRatio));
+                    if (rOption) rOption.click();
+                }
+
+                // Count selection
+                if (count && count > 1) {
+                    const cOption = options.find(o => o.textContent && o.textContent.includes(`x${count}`));
+                    if (cOption) cOption.click();
+                }
+
+                // Close settings popup by clicking outside or pressing Escape
+                document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }));
+            }, 300);
+        }
     }
 
     window.FlowAutomation = {
         checkAuth: function() {
-            const hasProfile = !!findElement(SELECTORS.userProfile);
             const currentUrl = window.location.href;
-            const isLoggedIn = hasProfile || (!currentUrl.includes('accounts.google.com') && !currentUrl.includes('ServiceLogin'));
-            
+            const isLoggedIn = currentUrl.includes('/project/') || (!currentUrl.includes('accounts.google.com') && !currentUrl.includes('ServiceLogin'));
             if (window.AndroidBridge && window.AndroidBridge.onAuthStatus) {
                 window.AndroidBridge.onAuthStatus(isLoggedIn, currentUrl);
             }
             return isLoggedIn;
+        },
+
+        getAccountInfo: function() {
+            return JSON.stringify({
+                url: window.location.href,
+                isLoggedIn: this.checkAuth(),
+                credits: "Active",
+                supportedModels: ["nano-banana-2", "nano-banana", "veo-3.1"],
+                supportedAspectRatios: ["1:1", "16:9", "9:16", "4:3", "3:4", "2:3", "3:2"],
+                maxOutputsCount: 4,
+                timestamp: Date.now()
+            });
         },
 
         dumpFullDom: function() {
@@ -152,7 +246,7 @@
                 const media = Array.from(document.querySelectorAll('img, video, a[download]')).map((m, i) => ({
                     index: i,
                     tag: m.tagName,
-                    src: (m.src || m.href || '').slice(0, 120),
+                    src: (m.src || m.href || '').slice(0, 150),
                     alt: m.getAttribute('alt') || ''
                 }));
 
@@ -187,35 +281,22 @@
                 const aspectRatio = options.aspectRatio || "1:1";
                 const count = options.count || 1;
 
-                // Log full DOM dump before executing so we can trace exact elements
-                this.dumpFullDom();
+                applyModelSettings(model, aspectRatio, count);
 
-                // If on landing page, try clicking "Try in Google Flow" first
-                const landingBtn = findElement(SELECTORS.landingTryButtons);
-                if (landingBtn) {
-                    if (window.AndroidBridge) window.AndroidBridge.log("Found landing button, clicking to enter workspace: " + landingBtn.textContent);
-                    landingBtn.click();
+                const success = setPromptText(prompt);
+                if (!success) {
+                    if (window.AndroidBridge) {
+                        window.AndroidBridge.onError(taskId, "Could not find prompt contenteditable box on page: " + window.location.href);
+                    }
+                    return false;
                 }
 
-                let inputEl = findElement(SELECTORS.promptInputs);
-                if (!inputEl) {
-                    // Re-check after 1s in case page transitioned
-                    setTimeout(() => {
-                        inputEl = findElement(SELECTORS.promptInputs);
-                        if (inputEl) {
-                            triggerReactInput(inputEl, prompt);
-                            this.triggerGenerate(taskId, count);
-                        } else {
-                            if (window.AndroidBridge) {
-                                window.AndroidBridge.onError(taskId, "Prompt input not found! URL: " + window.location.href);
-                            }
-                        }
-                    }, 1000);
-                    return true;
-                }
+                // Give React 350ms to activate button state
+                setTimeout(() => {
+                    clickGenerateButton();
+                    this.watchForOutput(taskId, 'image', count, 200000);
+                }, 350);
 
-                triggerReactInput(inputEl, prompt);
-                this.triggerGenerate(taskId, count);
                 return true;
             } catch (err) {
                 console.error("[FlowBridge] generateImage error:", err);
@@ -226,33 +307,33 @@
             }
         },
 
-        triggerGenerate: function(taskId, count) {
-            setTimeout(() => {
-                let btn = Array.from(document.querySelectorAll('button')).find(b => {
-                    const aria = (b.getAttribute('aria-label') || '').toLowerCase();
-                    const text = (b.textContent || '').toLowerCase();
-                    return (aria.includes('generate') || aria.includes('create') || aria.includes('üret') || aria.includes('oluştur') || text.includes('generate') || text.includes('create') || text.includes('üret') || text.includes('oluştur')) && !b.disabled;
-                });
+        generateVideo: function(taskId, prompt, optionsJson) {
+            console.log("[FlowBridge] generateVideo task:", taskId, prompt);
+            try {
+                const options = optionsJson ? JSON.parse(optionsJson) : {};
+                const model = options.model || "veo-3.1";
+                const aspectRatio = options.aspectRatio || "16:9";
 
-                if (!btn) {
-                    btn = findElement(SELECTORS.generateButtons);
-                }
+                applyModelSettings(model, aspectRatio, 1);
 
-                if (btn) {
-                    btn.removeAttribute('disabled');
-                    btn.disabled = false;
-                    btn.click();
-                    if (window.AndroidBridge) window.AndroidBridge.log("Generate button clicked: " + (btn.textContent || btn.getAttribute('aria-label')));
-                    this.watchForOutput(taskId, 'image', count, 180000);
-                } else {
-                    if (window.AndroidBridge) window.AndroidBridge.log("Generate button not found, dishing Enter key.");
-                    const inputEl = findElement(SELECTORS.promptInputs);
-                    if (inputEl) {
-                        inputEl.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, ctrlKey: true, bubbles: true }));
+                const success = setPromptText(prompt);
+                if (!success) {
+                    if (window.AndroidBridge) {
+                        window.AndroidBridge.onError(taskId, "Could not find prompt input");
                     }
-                    this.watchForOutput(taskId, 'image', count, 180000);
+                    return false;
                 }
-            }, 500);
+
+                setTimeout(() => {
+                    clickGenerateButton();
+                    this.watchForOutput(taskId, 'video', 1, 400000);
+                }, 350);
+
+                return true;
+            } catch (err) {
+                if (window.AndroidBridge) window.AndroidBridge.onError(taskId, err.toString());
+                return false;
+            }
         },
 
         watchForOutput: function(taskId, mediaType, expectedCount, timeoutMs) {
@@ -260,22 +341,36 @@
             let completed = false;
             expectedCount = expectedCount || 1;
 
+            // Collect existing media to only detect new output
+            const existingMedia = Array.from(document.querySelectorAll('img[src*="media.getMediaUrlRedirect"], video[src*="media.getMediaUrlRedirect"]'))
+                .map(m => m.src);
+
             const observer = new MutationObserver((mutations, obs) => {
                 if (completed) return;
 
                 const mediaElements = Array.from(document.querySelectorAll(
-                    mediaType === 'video' ? 'video[src], a[download][href*=".mp4"]' : 'img[src*="googleusercontent"], a[download][href*=".png"], a[download][href*=".jpg"]'
+                    mediaType === 'video' ? 'video[src*="media.getMediaUrlRedirect"], video[src]' : 'img[src*="media.getMediaUrlRedirect"], img[alt*="Üretilmiş resim" i], img[src*="googleusercontent"]'
                 ));
 
                 const validUrls = [];
                 for (const media of mediaElements) {
                     const src = media.src || media.href;
-                    if (src && !src.startsWith('data:image/svg') && !src.includes('avatar') && !validUrls.includes(src)) {
+                    if (src && !existingMedia.includes(src) && !src.startsWith('data:image/svg') && !src.includes('avatar') && !validUrls.includes(src)) {
                         validUrls.push(src);
                     }
                 }
 
-                if (validUrls.length >= expectedCount || (validUrls.length > 0 && Date.now() - startTime > 30000)) {
+                // If no new ones found yet, check if any media redirected
+                if (validUrls.length === 0 && mediaElements.length > 0 && Date.now() - startTime > 15000) {
+                    for (const media of mediaElements) {
+                        const src = media.src || media.href;
+                        if (src && (src.includes('media.getMediaUrlRedirect') || src.includes('googleusercontent')) && !validUrls.includes(src)) {
+                            validUrls.push(src);
+                        }
+                    }
+                }
+
+                if (validUrls.length >= expectedCount || (validUrls.length > 0 && Date.now() - startTime > 35000)) {
                     completed = true;
                     obs.disconnect();
                     if (window.AndroidBridge) {
@@ -306,5 +401,5 @@
         window.FlowAutomation.checkAuth();
     }, 5000);
 
-    console.log("[FlowBridge] Google Flow Bridge v2.4 Ready.");
+    console.log("[FlowBridge] Google Flow Bridge v2.5 Ready.");
 })();
