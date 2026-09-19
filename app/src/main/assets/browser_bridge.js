@@ -7,6 +7,12 @@
     if (window.__AGY_BROWSER_INITIALIZED__) return;
     window.__AGY_BROWSER_INITIALIZED__ = true;
 
+    // Stealth cloaking for Google Login / OAuth
+    try {
+        Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+        delete navigator.__proto__.webdriver;
+    } catch (e) {}
+
     console.log("[AgyBrowserBridge v4.0] Initializing Universal Web Sniffer & Bridge...");
 
     const bridge = window.AndroidBridge;

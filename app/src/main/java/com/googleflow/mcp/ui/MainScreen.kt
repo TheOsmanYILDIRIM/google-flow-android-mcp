@@ -289,6 +289,16 @@ fun MainScreen(
                                     .padding(horizontal = 8.dp, vertical = 2.dp),
                                 horizontalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
+                                    onClick = {
+                                        service?.engine?.switchUserAgent(service.engine.safariUserAgent)
+                                        service?.engine?.navigate("https://accounts.google.com/ServiceLogin?continue=https%3A%2F%2Flabs.google%2Ffx%2Ftools%2Fflow")
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEA4335)),
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                    modifier = Modifier.height(28.dp)
+                                ) {
+                                    Text("🔑 Google Giriş", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                }
                                 Button(
                                     onClick = { service?.engine?.loadFlowUrl() },
                                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4285F4)),
@@ -306,20 +316,28 @@ fun MainScreen(
                                     Text("NotebookLM", fontSize = 11.sp)
                                 }
                                 Button(
-                                    onClick = { service?.engine?.loadImageFxUrl() },
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF34A853)),
+                                    onClick = { service?.engine?.switchUserAgent(service.engine.safariUserAgent) },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3C4043)),
                                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
                                     modifier = Modifier.height(28.dp)
                                 ) {
-                                    Text("ImageFX", fontSize = 11.sp)
+                                    Text("🍎 Safari", fontSize = 11.sp)
                                 }
                                 Button(
-                                    onClick = { service?.engine?.navigate("https://accounts.google.com/") },
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEA4335)),
+                                    onClick = { service?.engine?.switchUserAgent(service.engine.pixelChromeUserAgent) },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3C4043)),
                                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
                                     modifier = Modifier.height(28.dp)
                                 ) {
-                                    Text("Google Giriş", fontSize = 11.sp)
+                                    Text("📱 Mobile Chrome", fontSize = 11.sp)
+                                }
+                                Button(
+                                    onClick = { service?.engine?.switchUserAgent(service.engine.desktopChromeUserAgent) },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3C4043)),
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                    modifier = Modifier.height(28.dp)
+                                ) {
+                                    Text("💻 Desktop Chrome", fontSize = 11.sp)
                                 }
                                 Button(
                                     onClick = { service?.engine?.getDom("interactive") {} },

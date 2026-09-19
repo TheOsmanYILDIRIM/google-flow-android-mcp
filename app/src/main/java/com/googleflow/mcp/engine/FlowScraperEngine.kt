@@ -44,11 +44,12 @@ class FlowScraperEngine(private val context: Context) {
     val videoFxUrl = "https://labs.google/fx/tools/video-fx"
     val loginUrl = "https://accounts.google.com/ServiceLogin?continue=https%3A%2F%2Flabs.google%2Ffx%2Ftools%2Fflow"
 
-    // Desktop Chrome User Agent matching desktop browser
-    val desktopChromeUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
-    val safariUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15"
+    // Clean browser User Agent profiles (Safari macOS allows Google OAuth without WebView block)
+    val safariUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.6 Safari/605.1.15"
+    val pixelChromeUserAgent = "Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.6668.70 Mobile Safari/537.36"
+    val desktopChromeUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36"
 
-    var currentUserAgent = desktopChromeUserAgent
+    var currentUserAgent = safariUserAgent
 
     @SuppressLint("SetJavaScriptEnabled")
     fun attachWebView(view: WebView) {

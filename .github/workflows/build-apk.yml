@@ -32,7 +32,6 @@ jobs:
       - name: Collect Output APK
         run: |
           mkdir -p build-output
-          find app/build/outputs/apk/ -name "*.apk" -exec cp {} build-output/GoogleFlowMCP-Release.apk \;
           find app/build/outputs/apk/ -name "*.apk" -exec cp {} build-output/AndroidBrowserMCP-Release.apk \;
           ls -la build-output/
 
@@ -45,22 +44,15 @@ jobs:
       - name: Create or Update GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v4.0.0
-          name: "Universal Android Browser Bridge & Google Flow MCP v4.0.0 (Release)"
+          tag_name: v4.0.1
+          name: "Universal Android Browser Bridge MCP v4.0.1 (Release)"
           body: |
-            ### 🌐 Universal Android Browser Bridge & Google Flow MCP Server (v4.0.0)
+            ### 🌐 Universal Android Browser Bridge MCP Server (v4.0.1)
 
-            Deep network traffic sniffer, JavaScript execution engine, interactive DOM analyzer, and Google Flow visual automation running natively in Android background with 1x1 floating overlay.
-
-            #### 🚀 Features:
-            - **Universal Web Navigation:** Navigate, reload, back, forward on any site.
-            - **Deep Network Sniffing:** Captures all `fetch` and `XMLHttpRequest` requests, payloads, HTTP statuses, and JSON responses.
-            - **Interactive DOM Analyzer:** Extracts structured UI trees with click/type simulation.
-            - **Console Logs & Errors:** Captures real-time browser console streams.
-            - **Google Flow & NotebookLM Automation:** Full support for Imagen 3, Veo 3.1, Nano Banana, and research helpers.
-          files: |
-            build-output/AndroidBrowserMCP-Release.apk
-            build-output/GoogleFlowMCP-Release.apk
+            - **Google OAuth / Giriş Koruması:** Safari macOS ve Pixel Chrome temiz User-Agent profilleri ile WebView engelleri aşıldı.
+            - **Tek APK Çıktısı:** AndroidBrowserMCP-Release.apk
+            - **Ağ Trafiği Koklayıcı & DOM Motoru:** Tam teşekküllü WebView köprüsü.
+          files: build-output/AndroidBrowserMCP-Release.apk
           make_latest: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
