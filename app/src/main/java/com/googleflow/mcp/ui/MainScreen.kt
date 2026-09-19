@@ -289,6 +289,7 @@ fun MainScreen(
                                     .padding(horizontal = 8.dp, vertical = 2.dp),
                                 horizontalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
+                                Button(
                                     onClick = {
                                         service?.engine?.switchUserAgent(service.engine.safariUserAgent)
                                         service?.engine?.navigate("https://accounts.google.com/ServiceLogin?continue=https%3A%2F%2Flabs.google%2Ffx%2Ftools%2Fflow")
