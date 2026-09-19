@@ -1,5 +1,7 @@
 package com.googleflow.mcp.ui
 
+import android.content.Intent
+import android.net.Uri
 import android.view.ViewGroup
 import android.webkit.WebView
 import androidx.compose.foundation.background
@@ -291,7 +293,7 @@ fun MainScreen(
                             ) {
                                 Button(
                                     onClick = {
-                                        service?.engine?.switchUserAgent(service.engine.safariUserAgent)
+                                        service?.engine?.switchUserAgent(service.engine.firefoxUserAgent)
                                         service?.engine?.navigate("https://accounts.google.com/ServiceLogin?continue=https%3A%2F%2Flabs.google%2Ffx%2Ftools%2Fflow")
                                     },
                                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEA4335)),
@@ -317,6 +319,14 @@ fun MainScreen(
                                     Text("NotebookLM", fontSize = 11.sp)
                                 }
                                 Button(
+                                    onClick = { service?.engine?.switchUserAgent(service.engine.firefoxUserAgent) },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3C4043)),
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                    modifier = Modifier.height(28.dp)
+                                ) {
+                                    Text("🦊 Firefox", fontSize = 11.sp)
+                                }
+                                Button(
                                     onClick = { service?.engine?.switchUserAgent(service.engine.safariUserAgent) },
                                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3C4043)),
                                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
@@ -333,12 +343,16 @@ fun MainScreen(
                                     Text("📱 Mobile Chrome", fontSize = 11.sp)
                                 }
                                 Button(
-                                    onClick = { service?.engine?.switchUserAgent(service.engine.desktopChromeUserAgent) },
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3C4043)),
+                                    onClick = {
+                                        val target = if (urlInput.isNotBlank()) urlInput else "https://accounts.google.com/ServiceLogin"
+                                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(target))
+                                        context.startActivity(intent)
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2D2E30)),
                                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
                                     modifier = Modifier.height(28.dp)
                                 ) {
-                                    Text("💻 Desktop Chrome", fontSize = 11.sp)
+                                    Text("🌐 Chrome'da Aç", fontSize = 11.sp)
                                 }
                                 Button(
                                     onClick = { service?.engine?.getDom("interactive") {} },

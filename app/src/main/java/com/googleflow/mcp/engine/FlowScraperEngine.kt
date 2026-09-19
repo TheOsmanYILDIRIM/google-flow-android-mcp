@@ -44,7 +44,8 @@ class FlowScraperEngine(private val context: Context) {
     val videoFxUrl = "https://labs.google/fx/tools/video-fx"
     val loginUrl = "https://accounts.google.com/ServiceLogin?continue=https%3A%2F%2Flabs.google%2Ffx%2Ftools%2Fflow"
 
-    // Clean browser User Agent profiles (Safari macOS allows Google OAuth without WebView block)
+    // Clean browser User Agent profiles (Firefox Desktop & Safari macOS bypass Google OAuth disallowed_useragent)
+    val firefoxUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:130.0) Gecko/20100101 Firefox/130.0"
     val safariUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.6 Safari/605.1.15"
     val pixelChromeUserAgent = "Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.6668.70 Mobile Safari/537.36"
     val desktopChromeUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36"
@@ -98,8 +99,14 @@ class FlowScraperEngine(private val context: Context) {
 
             override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
                 super.onPageStarted(view, url, favicon)
-                bridge.log("Loading: $url")
-                bridge.setPageInfo(url ?: "", view?.title ?: "")
+                val targetUrl = url ?: ""
+                if (targetUrl.contains("accounts.google.com") || targetUrl.contains("accounts.youtube.com")) {
+                    view?.settings?.userAgentString = firefoxUserAgent
+                } else {
+                    view?.settings?.userAgentString = currentUserAgent
+                }
+                bridge.log("Loading: $targetUrl")
+                bridge.setPageInfo(targetUrl, view?.title ?: "")
             }
 
             override fun onPageFinished(view: WebView?, url: String?) {
@@ -239,6 +246,12 @@ class FlowScraperEngine(private val context: Context) {
     }
 
     fun injectBridgeScripts() {
+        val currentUrl = webView?.url ?: ""
+        if (currentUrl.contains("accounts.google.com") || currentUrl.contains("accounts.youtube.com")) {
+            bridge.log("Google Login page active: Skipping script injection to prevent bot detection.")
+            return
+        }
+
         try {
             val browserBridgeJs = context.assets.open("browser_bridge.js").bufferedReader().use { it.readText() }
             mainHandler.post {
