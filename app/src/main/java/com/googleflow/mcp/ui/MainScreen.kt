@@ -35,6 +35,7 @@ fun MainScreen(
     isOverlayPermissionGranted: Boolean,
     onOpenOverlayPermissionSettings: () -> Unit
 ) {
+    val context = LocalContext.current
     var selectedTab by remember { mutableIntStateOf(0) }
     val logs = remember { mutableStateListOf<String>() }
 
