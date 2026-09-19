@@ -33,31 +33,34 @@ jobs:
         run: |
           mkdir -p build-output
           find app/build/outputs/apk/ -name "*.apk" -exec cp {} build-output/GoogleFlowMCP-Release.apk \;
+          find app/build/outputs/apk/ -name "*.apk" -exec cp {} build-output/AndroidBrowserMCP-Release.apk \;
           ls -la build-output/
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: GoogleFlowMCP-APK
-          path: build-output/GoogleFlowMCP-Release.apk
+          name: AndroidBrowserMCP-APK
+          path: build-output/AndroidBrowserMCP-Release.apk
 
       - name: Create or Update GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.0.0
-          name: "Google Flow Android MCP v1.0.0 (Release)"
+          tag_name: v4.0.0
+          name: "Universal Android Browser Bridge & Google Flow MCP v4.0.0 (Release)"
           body: |
-            ### 🌊 Google Flow Android MCP Server & Background Automation App (v1.0.0)
+            ### 🌐 Universal Android Browser Bridge & Google Flow MCP Server (v4.0.0)
 
-            Google Flow (Imagen & Veo AI) browser automation and MCP server running natively on Android with 1x1 floating background overlay.
+            Deep network traffic sniffer, JavaScript execution engine, interactive DOM analyzer, and Google Flow visual automation running natively in Android background with 1x1 floating overlay.
 
-            #### 🚀 Highlights:
-            - **Google Login via Native WebView:** Zero token/password sharing. Direct 2FA/Passkey support.
-            - **1x1 Invisible Floating Overlay:** Keeps WebView active in background without OS throttling.
-            - **Embedded Ktor MCP Server:** Listening on `http://127.0.0.1:8765/sse` for Antigravity & Claude Code CLI.
-            - **Termux Batch Pipeline:** Full automation scripts to batch-process 64+ images with reference conditioning.
-            - **Veo & Imagen Support:** Tools for `flow_generate_image`, `flow_generate_video`, `flow_generate_image_with_references`.
-          files: build-output/GoogleFlowMCP-Release.apk
+            #### 🚀 Features:
+            - **Universal Web Navigation:** Navigate, reload, back, forward on any site.
+            - **Deep Network Sniffing:** Captures all `fetch` and `XMLHttpRequest` requests, payloads, HTTP statuses, and JSON responses.
+            - **Interactive DOM Analyzer:** Extracts structured UI trees with click/type simulation.
+            - **Console Logs & Errors:** Captures real-time browser console streams.
+            - **Google Flow & NotebookLM Automation:** Full support for Imagen 3, Veo 3.1, Nano Banana, and research helpers.
+          files: |
+            build-output/AndroidBrowserMCP-Release.apk
+            build-output/GoogleFlowMCP-Release.apk
           make_latest: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

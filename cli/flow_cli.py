@@ -1,214 +1,193 @@
 #!/usr/bin/env python3
 """
-Google Flow MCP - Termux CLI Controller (v2.4)
-Supports Nano Banana 2, Veo 3.1, Aspect Ratios, Multi-Outputs, Cookie Injection, and Live DOM Dumping.
+Universal Android Browser & Google Flow CLI Controller (v4.0)
+Full browser control, DOM extraction, JavaScript evaluation, network traffic sniffing, screenshots, and AI generation.
 """
 
 import sys
 import os
 import json
 import argparse
-import requests
+import urllib.request
+import urllib.parse
+import urllib.error
 from typing import Optional
 
-BASE_URL = "http://127.0.0.1:8765"
+BASE_URL = os.environ.get("BROWSER_BRIDGE_URL", "http://127.0.0.1:8765")
+
+def req(endpoint: str, method: str = "GET", data: dict = None, timeout: int = 20):
+    url = f"{BASE_URL}{endpoint}"
+    req_data = None
+    headers = {"Content-Type": "application/json"}
+    if data is not None:
+        req_data = json.dumps(data).encode("utf-8")
+    
+    request = urllib.request.Request(url, data=req_data, headers=headers, method=method)
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as resp:
+            content = resp.read().decode("utf-8")
+            try:
+                return json.loads(content)
+            except Exception:
+                return {"raw": content}
+    except urllib.error.URLError as e:
+        print(f"❌ Connection error to Android Bridge ({url}): {e}")
+        print("💡 Make sure the Android Browser Bridge app is running.")
+        sys.exit(1)
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        sys.exit(1)
 
 def check_status():
-    try:
-        res = requests.get(f"{BASE_URL}/api/status", timeout=5)
-        data = res.json()
-        print("=== Google Flow MCP Status (v2.4) ===")
-        print(f"Status:            {data.get('status')}")
-        print(f"Auth State:        {'✓ Logged In (Ready)' if data.get('isLoggedIn') else '⚠️ Needs Login'}")
-        print(f"Supported Models:  {', '.join(data.get('supportedModels', []))}")
-        print(f"Aspect Ratios:     {', '.join(data.get('supportedAspectRatios', []))}")
-        print(f"Max Batch Outputs: {data.get('maxOutputsCount', 4)}x")
-        print(f"Current URL:       {data.get('currentUrl')}")
-        print(f"Endpoint:          {BASE_URL}/sse")
-    except Exception as e:
-        print(f"❌ Error connecting to Flow Android App: {e}")
-        print("Make sure Google Flow MCP app is running on your phone.")
-
-def dump_dom(output_file: Optional[str] = None):
-    try:
-        res = requests.get(f"{BASE_URL}/api/dom-dump", timeout=8)
-        data = res.json()
-        target_path = output_file or "flow_dom_dump.json"
-        with open(target_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
-        print(f"✓ Full Live DOM Dump saved to: {os.path.abspath(target_path)}")
-        print(f"Page Title:   {data.get('title')}")
-        print(f"Page URL:     {data.get('url')}")
-        print(f"Total Buttons: {data.get('totalButtons')}")
-        print(f"Total Inputs:  {data.get('totalInputs')}")
-    except Exception as e:
-        print(f"❌ Error dumping DOM: {e}")
-
-def import_cookies(cookies: str):
-    try:
-        res = requests.post(f"{BASE_URL}/api/cookies", json={"cookies": cookies}, timeout=5)
-        data = res.json()
-        if data.get("success"):
-            print("✓ Cookies successfully injected into Android App WebView!")
-            print("Flow page reloaded with authenticated session.")
-        else:
-            print(f"❌ Failed: {data.get('error')}")
-    except Exception as e:
-        print(f"❌ Error importing cookies: {e}")
-
-def list_projects():
-    try:
-        res = requests.get(f"{BASE_URL}/api/projects", timeout=5)
-        projects = res.json()
-        print(f"=== Flow Projects ({len(projects)}) ===")
-        for p in projects:
-            print(f"• {p.get('name')} (ID: {p.get('id')})")
-    except Exception as e:
-        print(f"❌ Error listing projects: {e}")
-
-def create_project(name: str):
-    try:
-        res = requests.post(f"{BASE_URL}/api/projects", json={"name": name}, timeout=5)
-        print(f"✓ Project creation requested: {name}")
-    except Exception as e:
-        print(f"❌ Error creating project: {e}")
-
-def generate_image(prompt: str, model: str = "nano-banana-2", aspect_ratio: str = "1:1", count: int = 1, output_path: Optional[str] = None):
-    print(f"🎨 Generating image [{model}] ({aspect_ratio}, {count}x): '{prompt}'...")
-    try:
-        payload = {
-            "prompt": prompt,
-            "model": model,
-            "aspectRatio": aspect_ratio,
-            "count": count
-        }
-        if output_path:
-            payload["outputPath"] = os.path.abspath(output_path)
-        
-        res = requests.post(f"{BASE_URL}/api/generate", json=payload, timeout=240)
-        data = res.json()
-        if data.get("success"):
-            print(f"✓ Image generated successfully with {data.get('model')} ({data.get('aspectRatio')})!")
-            print(f"Media URL:  {data.get('mediaUrl')}")
-            print(f"Saved to:   {data.get('localPath')}")
-        else:
-            print(f"❌ Generation failed: {data.get('error')}")
-    except Exception as e:
-        print(f"❌ Request error: {e}")
-
-def generate_with_reference(prompt: str, image_path: str, model: str = "nano-banana-2", aspect_ratio: str = "1:1", count: int = 1, output_path: Optional[str] = None):
-    abs_image = os.path.abspath(image_path)
-    if not os.path.exists(abs_image):
-        print(f"❌ Reference image not found: {abs_image}")
-        return
-
-    print(f"🖼️ Generating with reference '{abs_image}' [{model}] ({aspect_ratio}, {count}x): '{prompt}'...")
-    try:
-        payload = {
-            "prompt": prompt,
-            "imagePath": abs_image,
-            "model": model,
-            "aspectRatio": aspect_ratio,
-            "count": count
-        }
-        if output_path:
-            payload["outputPath"] = os.path.abspath(output_path)
-
-        res = requests.post(f"{BASE_URL}/api/generate-with-reference", json=payload, timeout=260)
-        data = res.json()
-        if data.get("success"):
-            print(f"✓ Output generated successfully!")
-            print(f"Media URL:  {data.get('mediaUrl')}")
-            print(f"Saved to:   {data.get('localPath')}")
-        else:
-            print(f"❌ Generation failed: {data.get('error')}")
-    except Exception as e:
-        print(f"❌ Request error: {e}")
-
-def generate_video(prompt: str, model: str = "veo-3.1", aspect_ratio: str = "16:9", output_path: Optional[str] = None):
-    print(f"🎬 Generating video [{model}] ({aspect_ratio}): '{prompt}'...")
-    try:
-        payload = {
-            "prompt": prompt,
-            "model": model,
-            "aspectRatio": aspect_ratio
-        }
-        if output_path:
-            payload["outputPath"] = os.path.abspath(output_path)
-
-        res = requests.post(f"{BASE_URL}/api/video", json=payload, timeout=400)
-        data = res.json()
-        if data.get("success"):
-            print(f"✓ Video generated successfully with {model}!")
-            print(f"Media URL:  {data.get('mediaUrl')}")
-            print(f"Saved to:   {data.get('localPath')}")
-        else:
-            print(f"❌ Video generation failed: {data.get('error')}")
-    except Exception as e:
-        print(f"❌ Request error: {e}")
+    data = req("/api/status")
+    print("🌐 === Universal Android Browser Bridge (v4.0) ===")
+    print(f"Status:            {data.get('status')}")
+    print(f"Auth State:        {'✓ Ready / Logged In' if data.get('isLoggedIn') else '⚠️ Needs Login / Fresh'}")
+    print(f"Current URL:       {data.get('currentUrl')}")
+    print(f"Page Title:        {data.get('pageTitle')}")
+    print(f"Traffic Captured:  {data.get('trafficCount')} requests")
+    print(f"Console Logs:      {data.get('consoleCount')} lines")
+    print(f"Supported Models:  {', '.join(data.get('supportedModels', []))}")
+    print(f"Aspect Ratios:     {', '.join(data.get('supportedAspectRatios', []))}")
 
 def main():
-    parser = argparse.ArgumentParser(description="Google Flow Android MCP CLI Controller (v2.4)")
-    subparsers = parser.add_subparsers(dest="command", required=True)
+    parser = argparse.ArgumentParser(description="Universal Android Browser & Google Flow CLI")
+    subparsers = parser.add_subparsers(dest="command", help="Command to run")
 
-    # status
-    subparsers.add_parser("status", help="Check Flow MCP app and login status")
+    subparsers.add_parser("status", help="Check bridge status")
 
-    # dump-dom
-    dom_parser = subparsers.add_parser("dump-dom", help="Inspect and dump current real-time DOM structure")
-    dom_parser.add_argument("--output", "-o", help="Target JSON file path")
+    nav_p = subparsers.add_parser("nav", help="Navigate to URL")
+    nav_p.add_argument("url", help="Target URL")
 
-    # cookies
-    cookie_parser = subparsers.add_parser("import-cookies", help="Inject session cookies into Android App")
-    cookie_parser.add_argument("cookies", help="Cookie string (e.g. 'SID=...; SSID=...')")
+    eval_p = subparsers.add_parser("eval", help="Evaluate JavaScript")
+    eval_p.add_argument("script", help="JavaScript expression")
 
-    # projects
-    subparsers.add_parser("projects", help="List user projects in Flow")
-    proj_create = subparsers.add_parser("create-project", help="Create a new project workspace")
-    proj_create.add_argument("--name", "-n", required=True, help="Project name")
+    dom_p = subparsers.add_parser("dom", help="Inspect DOM")
+    dom_p.add_argument("--format", choices=["interactive", "text", "html"], default="interactive")
+    dom_p.add_argument("--selector", help="CSS selector")
 
-    # image
-    img_parser = subparsers.add_parser("image", help="Generate AI Image with Nano Banana 2")
-    img_parser.add_argument("--prompt", "-p", required=True, help="Text prompt")
-    img_parser.add_argument("--model", "-m", default="nano-banana-2", choices=["nano-banana-2", "nano-banana"], help="Image model")
-    img_parser.add_argument("--ratio", "-r", default="1:1", choices=["1:1", "16:9", "9:16", "4:3", "3:4", "2:3", "3:2"], help="Aspect ratio")
-    img_parser.add_argument("--count", "-c", type=int, default=1, choices=[1, 2, 3, 4], help="Outputs count")
-    img_parser.add_argument("--output", "-o", help="Destination file path")
+    click_p = subparsers.add_parser("click", help="Click element")
+    click_p.add_argument("--selector", help="CSS selector")
+    click_p.add_argument("--text", help="Visible text")
 
-    # ref-image
-    ref_parser = subparsers.add_parser("ref-image", help="Generate AI Image with reference image")
-    ref_parser.add_argument("--image", "-i", required=True, help="Path to reference image")
-    ref_parser.add_argument("--prompt", "-p", required=True, help="Text prompt")
-    ref_parser.add_argument("--model", "-m", default="nano-banana-2", choices=["nano-banana-2", "nano-banana"], help="Image model")
-    ref_parser.add_argument("--ratio", "-r", default="1:1", choices=["1:1", "16:9", "9:16", "4:3", "3:4", "2:3", "3:2"], help="Aspect ratio")
-    ref_parser.add_argument("--count", "-c", type=int, default=1, choices=[1, 2, 3, 4], help="Outputs count")
-    ref_parser.add_argument("--output", "-o", help="Destination file path")
+    type_p = subparsers.add_parser("type", help="Type text into field")
+    type_p.add_argument("--selector", required=True)
+    type_p.add_argument("--text", required=True)
+    type_p.add_argument("--enter", action="store_true")
 
-    # video
-    vid_parser = subparsers.add_parser("video", help="Generate AI Video (Veo 3.1)")
-    vid_parser.add_argument("--prompt", "-p", required=True, help="Text prompt")
-    vid_parser.add_argument("--model", "-m", default="veo-3.1", choices=["veo-3.1"], help="Video model")
-    vid_parser.add_argument("--ratio", "-r", default="16:9", choices=["16:9", "9:16"], help="Aspect ratio")
-    vid_parser.add_argument("--output", "-o", help="Destination MP4 file path")
+    traffic_p = subparsers.add_parser("traffic", help="View network traffic")
+    traffic_p.add_argument("--filter", help="URL or method filter")
+    traffic_p.add_argument("--limit", type=int, default=30)
+    traffic_p.add_argument("--clear", action="store_true")
+
+    console_p = subparsers.add_parser("console", help="View console logs")
+    console_p.add_argument("--level", choices=["log", "info", "warn", "error"])
+    console_p.add_argument("--limit", type=int, default=30)
+    console_p.add_argument("--clear", action="store_true")
+
+    subparsers.add_parser("screenshot", help="Capture screenshot")
+
+    cookies_p = subparsers.add_parser("cookies", help="Manage cookies")
+    cookies_p.add_argument("--url", default="https://labs.google")
+    cookies_p.add_argument("--set", help="Cookies to import")
+    cookies_p.add_argument("--clear", action="store_true")
+
+    # Flow generation commands
+    gen_p = subparsers.add_parser("generate", help="Generate AI Image in Flow")
+    gen_p.add_argument("prompt", help="Text prompt")
+    gen_p.add_argument("--model", default="Nano Banana 2")
+    gen_p.add_argument("--ratio", default="1:1")
+    gen_p.add_argument("--count", type=int, default=1)
 
     args = parser.parse_args()
 
-    if args.command == "status":
+    if not args.command or args.command == "status":
         check_status()
-    elif args.command == "dump-dom":
-        dump_dom(args.output)
-    elif args.command == "import-cookies":
-        import_cookies(args.cookies)
-    elif args.command == "projects":
-        list_projects()
-    elif args.command == "create-project":
-        create_project(args.name)
-    elif args.command == "image":
-        generate_image(args.prompt, args.model, args.ratio, args.count, args.output)
-    elif args.command == "ref-image":
-        generate_with_reference(args.prompt, args.image, args.model, args.ratio, args.count, args.output)
-    elif args.command == "video":
-        generate_video(args.prompt, args.model, args.ratio, args.output)
+        return
+
+    if args.command == "nav":
+        data = req("/api/navigate", method="POST", data={"url": args.url})
+        print(f"✓ Navigated to: {args.url}")
+
+    elif args.command == "eval":
+        data = req("/api/eval", method="POST", data={"script": args.script})
+        print(json.dumps(data, indent=2, ensure_ascii=False))
+
+    elif args.command == "dom":
+        params = f"?format={args.format}"
+        if args.selector:
+            params += f"&selector={urllib.parse.quote(args.selector)}"
+        data = req(f"/api/dom{params}")
+        if args.format == "interactive":
+            elems = data.get("elements", [])
+            print(f"📄 === Interactive Elements ({len(elems)}) for '{data.get('title')}' ===")
+            for el in elems:
+                print(f"[{el.get('index')}] <{el.get('tag')}> {el.get('selector')} | '{el.get('text')}' (val: {el.get('value')})")
+        else:
+            print(json.dumps(data, indent=2, ensure_ascii=False))
+
+    elif args.command == "click":
+        data = req("/api/click", method="POST", data={"selector": args.selector, "text": args.text})
+        print("✓ Click:", data)
+
+    elif args.command == "type":
+        data = req("/api/type", method="POST", data={"selector": args.selector, "text": args.text, "enter": args.enter})
+        print("✓ Type:", data)
+
+    elif args.command == "traffic":
+        if args.clear:
+            req("/api/traffic/clear", method="POST")
+            print("✓ Traffic cleared.")
+        else:
+            params = f"?limit={args.limit}"
+            if args.filter:
+                params += f"&filter={urllib.parse.quote(args.filter)}"
+            data = req(f"/api/traffic{params}")
+            print(f"📡 === Intercepted Traffic ({len(data)}) ===")
+            for t in data:
+                print(f"[{t.get('method')}] {t.get('status')} {t.get('url')} ({t.get('durationMs')}ms)")
+                if t.get('requestBody'):
+                    print(f"   Payload: {str(t.get('requestBody'))[:100]}")
+                if t.get('responseBody'):
+                    print(f"   Response: {str(t.get('responseBody'))[:150]}")
+
+    elif args.command == "console":
+        if args.clear:
+            req("/api/console/clear", method="POST")
+            print("✓ Console cleared.")
+        else:
+            params = f"?limit={args.limit}"
+            if args.level:
+                params += f"&level={urllib.parse.quote(args.level)}"
+            data = req(f"/api/console{params}")
+            print(f"📜 === Console Logs ({len(data)}) ===")
+            for c in data:
+                print(f"[{c.get('timestamp')}] [{c.get('level').upper()}]: {c.get('message')}")
+
+    elif args.command == "screenshot":
+        data = req("/api/screenshot", method="POST")
+        if data.get("success"):
+            print(f"📸 Screenshot saved to: {data.get('path')}")
+        else:
+            print(f"❌ Screenshot failed: {data.get('error')}")
+
+    elif args.command == "cookies":
+        if args.clear:
+            req("/api/cookies/clear", method="POST")
+            print("✓ Cookies cleared.")
+        elif args.set:
+            data = req("/api/cookies", method="POST", data={"cookies": args.set, "url": args.url})
+            print(f"✓ Cookies set: {data}")
+        else:
+            data = req(f"/api/cookies?url={urllib.parse.quote(args.url)}")
+            print(f"🍪 Cookies for {args.url}:")
+            print(data.get("cookieHeader", ""))
+
+    elif args.command == "generate":
+        print(f"🎨 Generating image in Flow: '{args.prompt}'...")
+        # triggers Flow generation
+        res = req("/api/eval", method="POST", data={"script": f"window.FlowAutomation ? window.FlowAutomation.generateImage('cli', '{args.prompt}', '{{\"model\":\"{args.model}\",\"aspectRatio\":\"{args.ratio}\"}}') : 'Flow automation not ready';"})
+        print(f"✓ Result: {res}")
 
 if __name__ == "__main__":
     main()

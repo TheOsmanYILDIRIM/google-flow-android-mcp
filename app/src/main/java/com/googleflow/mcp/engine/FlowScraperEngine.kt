@@ -3,11 +3,12 @@ package com.googleflow.mcp.engine
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.os.Message
-import android.view.KeyEvent
+import android.util.Base64
 import android.webkit.CookieManager
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
@@ -22,6 +23,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.util.UUID
@@ -42,7 +44,7 @@ class FlowScraperEngine(private val context: Context) {
     val videoFxUrl = "https://labs.google/fx/tools/video-fx"
     val loginUrl = "https://accounts.google.com/ServiceLogin?continue=https%3A%2F%2Flabs.google%2Ffx%2Ftools%2Fflow"
 
-    // Desktop Chrome User Agent matching GabrielGargiuloDev desktop environment
+    // Desktop Chrome User Agent matching desktop browser
     val desktopChromeUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
     val safariUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15"
 
@@ -96,13 +98,15 @@ class FlowScraperEngine(private val context: Context) {
             override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
                 super.onPageStarted(view, url, favicon)
                 bridge.log("Loading: $url")
+                bridge.setPageInfo(url ?: "", view?.title ?: "")
             }
 
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
                 cookieManager.flush()
                 bridge.log("Loaded: $url")
-                injectBridgeScript()
+                bridge.setPageInfo(url ?: "", view?.title ?: "")
+                injectBridgeScripts()
 
                 try {
                     val labs = cookieManager.getCookie("https://labs.google") ?: ""
@@ -110,16 +114,20 @@ class FlowScraperEngine(private val context: Context) {
                     val accounts = cookieManager.getCookie("https://accounts.google.com") ?: ""
                     val all = listOf(labs, google, accounts).filter { it.isNotBlank() }.joinToString("; ")
                     if (all.contains("PSID") || all.contains("SSID") || all.contains("OTZ") || all.contains("SID")) {
-                        val dir = File("/sdcard/Download/GoogleFlow")
+                        val dir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "GoogleFlow")
                         if (!dir.exists()) dir.mkdirs()
                         File(dir, "cookies.txt").writeText(all)
-                        bridge.log("✓ Auto-exported cookies to /sdcard/Download/GoogleFlow/cookies.txt")
                     }
                 } catch (e: Exception) {}
             }
         }
 
         view.webChromeClient = object : WebChromeClient() {
+            override fun onReceivedTitle(view: WebView?, title: String?) {
+                super.onReceivedTitle(view, title)
+                bridge.setPageInfo(view?.url ?: "", title ?: "")
+            }
+
             override fun onCreateWindow(
                 view: WebView?,
                 isDialog: Boolean,
@@ -133,7 +141,7 @@ class FlowScraperEngine(private val context: Context) {
                     val cm = CookieManager.getInstance()
                     cm.setAcceptCookie(true)
                     cm.setAcceptThirdPartyCookies(this, true)
-                    
+
                     webViewClient = object : WebViewClient() {
                         override fun shouldOverrideUrlLoading(v: WebView?, req: WebResourceRequest?): Boolean {
                             val targetUrl = req?.url?.toString() ?: return false
@@ -153,6 +161,42 @@ class FlowScraperEngine(private val context: Context) {
         view.loadUrl(flowUrl)
     }
 
+    fun navigate(url: String, customUserAgent: String? = null) {
+        mainHandler.post {
+            if (!customUserAgent.isNullOrBlank()) {
+                currentUserAgent = customUserAgent
+                webView?.settings?.userAgentString = customUserAgent
+            }
+            webView?.loadUrl(url)
+            bridge.log("Navigating to: $url")
+        }
+    }
+
+    fun reload() {
+        mainHandler.post {
+            webView?.reload()
+            bridge.log("Reloading current page")
+        }
+    }
+
+    fun goBack() {
+        mainHandler.post {
+            if (webView?.canGoBack() == true) {
+                webView?.goBack()
+                bridge.log("Navigated back")
+            }
+        }
+    }
+
+    fun goForward() {
+        mainHandler.post {
+            if (webView?.canGoForward() == true) {
+                webView?.goForward()
+                bridge.log("Navigated forward")
+            }
+        }
+    }
+
     fun switchUserAgent(ua: String) {
         currentUserAgent = ua
         mainHandler.post {
@@ -162,27 +206,79 @@ class FlowScraperEngine(private val context: Context) {
         }
     }
 
-    fun importCookies(cookieString: String) {
+    fun importCookies(cookieString: String, targetDomain: String = "https://labs.google") {
         val cookieManager = CookieManager.getInstance()
         val cookies = cookieString.split(";")
         for (rawCookie in cookies) {
             val cookie = rawCookie.trim()
             if (cookie.isNotEmpty()) {
-                cookieManager.setCookie("https://labs.google", cookie)
-                cookieManager.setCookie("https://accounts.google.com", cookie)
+                cookieManager.setCookie(targetDomain, cookie)
                 cookieManager.setCookie("https://google.com", cookie)
+                cookieManager.setCookie("https://accounts.google.com", cookie)
             }
         }
         cookieManager.flush()
         mainHandler.post {
-            webView?.loadUrl(flowUrl)
-            bridge.log("Imported ${cookies.size} cookies and reloaded Flow.")
+            bridge.log("Imported ${cookies.size} cookies for $targetDomain.")
         }
     }
 
-    fun dumpDom(callback: (String) -> Unit) {
+    fun getCookiesForUrl(url: String): String {
+        val cookieManager = CookieManager.getInstance()
+        return cookieManager.getCookie(url) ?: ""
+    }
+
+    fun clearAllCookies(callback: () -> Unit) {
+        val cookieManager = CookieManager.getInstance()
+        cookieManager.removeAllCookies {
+            cookieManager.flush()
+            bridge.log("All cookies cleared.")
+            callback()
+        }
+    }
+
+    fun injectBridgeScripts() {
+        try {
+            val browserBridgeJs = context.assets.open("browser_bridge.js").bufferedReader().use { it.readText() }
+            mainHandler.post {
+                webView?.evaluateJavascript(browserBridgeJs) { _ ->
+                    bridge.log("Universal BrowserBridge injected.")
+                }
+            }
+        } catch (e: Exception) {
+            bridge.log("Failed to inject BrowserBridge: ${e.message}")
+        }
+
+        try {
+            val flowBridgeJs = context.assets.open("flow_bridge.js").bufferedReader().use { it.readText() }
+            mainHandler.post {
+                webView?.evaluateJavascript(flowBridgeJs) { _ ->
+                    bridge.log("FlowBridge injected.")
+                }
+            }
+        } catch (e: Exception) {}
+    }
+
+    fun evaluateJs(script: String, callback: (String) -> Unit) {
         mainHandler.post {
-            webView?.evaluateJavascript("window.FlowAutomation.dumpFullDom();") { result ->
+            webView?.evaluateJavascript(script) { result ->
+                val cleaned = if (result != null && result.startsWith("\"") && result.endsWith("\"")) {
+                    try {
+                        gson.fromJson(result, String::class.java)
+                    } catch (e: Exception) {
+                        result
+                    }
+                } else result ?: "null"
+                callback(cleaned)
+            }
+        }
+    }
+
+    fun getDom(format: String = "interactive", selector: String? = null, callback: (String) -> Unit) {
+        val safeSel = if (selector != null) "\"${selector.replace("\"", "\\\"")}\"" else "null"
+        val script = "window.__AGY_BROWSER__ ? JSON.stringify(window.__AGY_BROWSER__.getDom('$format', $safeSel)) : JSON.stringify({success: false, error: 'Bridge not loaded'});"
+        mainHandler.post {
+            webView?.evaluateJavascript(script) { result ->
                 val unescaped = if (result != null && result.startsWith("\"") && result.endsWith("\"")) {
                     try {
                         gson.fromJson(result, String::class.java)
@@ -190,15 +286,93 @@ class FlowScraperEngine(private val context: Context) {
                         result
                     }
                 } else result ?: "{}"
+                callback(unescaped)
+            }
+        }
+    }
 
-                try {
-                    val dir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "GoogleFlow")
-                    if (!dir.exists()) dir.mkdirs()
-                    File(dir, "dom_dump.json").writeText(unescaped)
-                    bridge.log("Saved DOM dump to Downloads/GoogleFlow/dom_dump.json")
-                } catch (e: Exception) {
-                    bridge.log("Error saving DOM dump file: ${e.message}")
+    fun clickElement(selector: String?, textMatch: String?, callback: (String) -> Unit) {
+        val safeSel = if (selector != null) "\"${selector.replace("\"", "\\\"")}\"" else "null"
+        val safeText = if (textMatch != null) "\"${textMatch.replace("\"", "\\\"")}\"" else "null"
+        val script = "window.__AGY_BROWSER__ ? JSON.stringify(window.__AGY_BROWSER__.click($safeSel, $safeText)) : JSON.stringify({success: false, error: 'Bridge not ready'});"
+        mainHandler.post {
+            webView?.evaluateJavascript(script) { result ->
+                val unescaped = if (result != null && result.startsWith("\"") && result.endsWith("\"")) {
+                    try {
+                        gson.fromJson(result, String::class.java)
+                    } catch (e: Exception) {
+                        result
+                    }
+                } else result ?: "{}"
+                callback(unescaped)
+            }
+        }
+    }
+
+    fun typeText(selector: String, text: String, clearFirst: Boolean = true, pressEnter: Boolean = false, callback: (String) -> Unit) {
+        val safeSel = selector.replace("\"", "\\\"")
+        val safeText = text.replace("\"", "\\\"").replace("\n", "\\n")
+        val script = "window.__AGY_BROWSER__ ? JSON.stringify(window.__AGY_BROWSER__.type(\"$safeSel\", \"$safeText\", $clearFirst, $pressEnter)) : JSON.stringify({success: false, error: 'Bridge not ready'});"
+        mainHandler.post {
+            webView?.evaluateJavascript(script) { result ->
+                val unescaped = if (result != null && result.startsWith("\"") && result.endsWith("\"")) {
+                    try {
+                        gson.fromJson(result, String::class.java)
+                    } catch (e: Exception) {
+                        result
+                    }
+                } else result ?: "{}"
+                callback(unescaped)
+            }
+        }
+    }
+
+    fun captureScreenshot(callback: (path: String?, base64: String?, error: String?) -> Unit) {
+        mainHandler.post {
+            val v = webView
+            if (v == null || v.width <= 0 || v.height <= 0) {
+                callback(null, null, "WebView is not attached or has zero dimensions")
+                return@post
+            }
+
+            try {
+                val bitmap = Bitmap.createBitmap(v.width, v.height, Bitmap.Config.ARGB_8888)
+                val canvas = Canvas(bitmap)
+                v.draw(canvas)
+
+                // Save to Documents/BrowserBridge
+                val dir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS), "BrowserBridge")
+                if (!dir.exists()) dir.mkdirs()
+
+                val filename = "screenshot_${System.currentTimeMillis()}.png"
+                val file = File(dir, filename)
+                FileOutputStream(file).use { out ->
+                    bitmap.compress(Bitmap.CompressFormat.PNG, 90, out)
                 }
+
+                val baos = ByteArrayOutputStream()
+                bitmap.compress(Bitmap.CompressFormat.PNG, 85, baos)
+                val base64 = Base64.encodeToString(baos.toByteArray(), Base64.NO_WRAP)
+
+                bridge.log("Screenshot saved: ${file.absolutePath}")
+                callback(file.absolutePath, base64, null)
+            } catch (e: Exception) {
+                bridge.log("Screenshot error: ${e.message}")
+                callback(null, null, e.message)
+            }
+        }
+    }
+
+    fun dumpDom(callback: (String) -> Unit) {
+        mainHandler.post {
+            webView?.evaluateJavascript("window.__AGY_BROWSER__ ? JSON.stringify(window.__AGY_BROWSER__.getDom('html')) : window.FlowAutomation ? window.FlowAutomation.dumpFullDom() : '{}';") { result ->
+                val unescaped = if (result != null && result.startsWith("\"") && result.endsWith("\"")) {
+                    try {
+                        gson.fromJson(result, String::class.java)
+                    } catch (e: Exception) {
+                        result
+                    }
+                } else result ?: "{}"
                 callback(unescaped)
             }
         }
@@ -228,19 +402,6 @@ class FlowScraperEngine(private val context: Context) {
         }
     }
 
-    private fun injectBridgeScript() {
-        try {
-            val jsCode = context.assets.open("flow_bridge.js").bufferedReader().use { it.readText() }
-            mainHandler.post {
-                webView?.evaluateJavascript(jsCode) { result ->
-                    bridge.log("FlowBridge v3.0 injected: $result")
-                }
-            }
-        } catch (e: Exception) {
-            bridge.log("Failed to inject FlowBridge: ${e.message}")
-        }
-    }
-
     fun generateImage(
         prompt: String,
         model: String = "Nano Banana 2",
@@ -259,7 +420,7 @@ class FlowScraperEngine(private val context: Context) {
         val optionsJson = gson.toJson(options).replace("\"", "\\\"")
 
         mainHandler.post {
-            val script = "window.FlowAutomation.generateImage('$taskId', \"$safePrompt\", \"$optionsJson\");"
+            val script = "window.FlowAutomation ? window.FlowAutomation.generateImage('$taskId', \"$safePrompt\", \"$optionsJson\") : null;"
             webView?.evaluateJavascript(script) { result ->
                 bridge.log("Executed generateImage ($taskId): $result")
             }
@@ -289,7 +450,7 @@ class FlowScraperEngine(private val context: Context) {
         val optionsJson = gson.toJson(options).replace("\"", "\\\"")
 
         mainHandler.post {
-            val script = "window.FlowAutomation.generateImage('$taskId', \"$safePrompt\", \"$optionsJson\");"
+            val script = "window.FlowAutomation ? window.FlowAutomation.generateImage('$taskId', \"$safePrompt\", \"$optionsJson\") : null;"
             webView?.evaluateJavascript(script) { result ->
                 bridge.log("Executed generateWithReference ($taskId): $result")
             }
@@ -314,7 +475,7 @@ class FlowScraperEngine(private val context: Context) {
         val optionsJson = gson.toJson(options).replace("\"", "\\\"")
 
         mainHandler.post {
-            val script = "window.FlowAutomation.generateVideo('$taskId', \"$safePrompt\", \"$optionsJson\");"
+            val script = "window.FlowAutomation ? window.FlowAutomation.generateVideo('$taskId', \"$safePrompt\", \"$optionsJson\") : null;"
             webView?.evaluateJavascript(script) { result ->
                 bridge.log("Executed generateVideo ($taskId): $result")
             }
@@ -325,7 +486,7 @@ class FlowScraperEngine(private val context: Context) {
 
     fun listProjects(callback: (String) -> Unit) {
         mainHandler.post {
-            webView?.evaluateJavascript("window.FlowAutomation.listProjects ? window.FlowAutomation.listProjects() : '[]';") { result ->
+            webView?.evaluateJavascript("window.FlowAutomation && window.FlowAutomation.listProjects ? window.FlowAutomation.listProjects() : '[]';") { result ->
                 callback(result ?: "[]")
             }
         }
@@ -334,7 +495,7 @@ class FlowScraperEngine(private val context: Context) {
     fun createProject(projectName: String) {
         val safeName = projectName.replace("\"", "\\\"")
         mainHandler.post {
-            webView?.evaluateJavascript("window.FlowAutomation.createProject ? window.FlowAutomation.createProject(\"$safeName\") : null;") { result ->
+            webView?.evaluateJavascript("window.FlowAutomation && window.FlowAutomation.createProject ? window.FlowAutomation.createProject(\"$safeName\") : null;") { result ->
                 bridge.log("Created project $safeName: $result")
             }
         }
@@ -342,7 +503,7 @@ class FlowScraperEngine(private val context: Context) {
 
     fun checkStatus(callback: (String) -> Unit) {
         mainHandler.post {
-            webView?.evaluateJavascript("window.FlowAutomation.getAccountInfo();") { result ->
+            webView?.evaluateJavascript("window.FlowAutomation && window.FlowAutomation.getAccountInfo ? window.FlowAutomation.getAccountInfo() : '{}';") { result ->
                 callback(result ?: "{}")
             }
         }
