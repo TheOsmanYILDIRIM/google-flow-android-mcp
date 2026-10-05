@@ -1,5 +1,9 @@
 name: Build & Release Google Flow MCP APK
 
+concurrency:
+  group: google-flow-build-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   push:
     branches: [ "main", "master" ]
